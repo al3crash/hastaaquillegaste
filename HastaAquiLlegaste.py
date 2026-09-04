@@ -24,6 +24,13 @@ st.set_page_config(
 )
 
 # ============================================================
+# CONFIGURACIÓN PÚBLICA
+# ============================================================
+# Cambia estos valores si quieres usar otro contador o tu enlace de PayPal.
+COUNTER_ID = "alex-ultratumba"
+PAYPAL_URL = "https://www.paypal.me/TU_USUARIO"
+
+# ============================================================
 # ESTADO PERSISTENTE
 # ============================================================
 for key, default in {
@@ -1767,26 +1774,34 @@ if st.session_state.resultado_generado and st.session_state.resultado:
 # ============================================================
 # PIE DE PÁGINA / VISITAS / APOYO
 # ============================================================
+# El contador se deja con la URL escrita directamente para evitar
+# cualquier NameError de COUNTER_ID durante el renderizado.
+
 st.markdown(
-    f"""
+    """
     <div class="contador-visitas">
         ☠️ VISITAS AL PORTAL
         <div style="margin-top:8px;">
-            <img src="https://hits.sh/{COUNTER_ID}.svg?style=flat-square&label=VISITAS&color=00ff66&labelColor=1a0033"
+            <img src="https://hits.sh/alex-ultratumba.svg?style=flat-square&label=VISITAS&color=00ff66&labelColor=1a0033"
                  alt="Contador de visitas"
                  style="height:24px;">
         </div>
     </div>
+    """,
+    unsafe_allow_html=True
+)
 
+# Cambia únicamente esta dirección por tu enlace real de PayPal.
+PAYPAL_URL = "https://www.paypal.me/TU_USUARIO"
+
+st.markdown(
+    f"""
     <div class="apoyar-proyecto">
         <a href="{html.escape(PAYPAL_URL, quote=True)}" target="_blank" rel="noopener noreferrer">
             🖤 APOYAR PROYECTO
         </a>
     </div>
-
-    <div class="footer-alex">
-        CREATED BY ALEX A.
-    </div>
+    <div class="footer-alex">CREATED BY ALEX A.</div>
     """,
     unsafe_allow_html=True
 )
