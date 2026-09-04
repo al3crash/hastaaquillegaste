@@ -294,7 +294,6 @@ serio y cinematográfico, pero claramente ficticio.
 # ENCABEZADO
 # ============================================================
 st.markdown("<h1>⛧ HASTA AQUÍ LLEGASTE ⛧</h1>", unsafe_allow_html=True)
-instalar_ambiente()
 
 
 # ============================================================
