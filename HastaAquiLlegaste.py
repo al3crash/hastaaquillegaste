@@ -8,6 +8,7 @@ import hashlib
 import wave
 import math
 import os
+import shutil
 import tempfile
 from datetime import datetime, timedelta
 
@@ -196,23 +197,26 @@ def dibujar_codigo_barras(canvas, x, y, semilla):
 
 # ============================================================
 # VOZ MASCULINA GRAVE PARA STREAMLIT CLOUD
-# edge-tts + FFmpeg: no depende de voces instaladas en Windows/Linux
+# edge-tts + FFmpeg
 # ============================================================
 def generar_voz_ultratumba(texto, semilla):
-    """Genera una voz masculina en español compatible con Streamlit Cloud.
+    """Genera la sentencia en voz masculina española para Streamlit Cloud.
 
-    Usa Microsoft Edge TTS para obtener una voz masculina estable y FFmpeg
-    para bajarla de tono y añadir reverberación suave.
+    Streamlit Community Cloud funciona sobre Linux, por lo que NO dependemos
+    de SAPI5/pyttsx3 ni de voces instaladas en Windows.
+
+    Flujo:
+      texto -> Microsoft Edge TTS -> MP3 -> FFmpeg -> WAV grave + reverb
     """
     try:
         import asyncio
         import subprocess
-        import shutil
         import edge_tts
     except Exception:
         return None
 
-    if shutil.which("ffmpeg") is None:
+    # FFmpeg debe estar instalado mediante packages.txt.
+    if not shutil.which("ffmpeg"):
         return None
 
     tmp_mp3 = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
@@ -224,29 +228,42 @@ def generar_voz_ultratumba(texto, semilla):
     wav_path = tmp_wav.name
 
     async def sintetizar():
-        # Voz masculina mexicana. Se genera en el servidor, no en el equipo
-        # del usuario, por lo que funciona igual en Streamlit Cloud.
+        # Jorge Neural = voz masculina en español de México.
         comunicador = edge_tts.Communicate(
             texto,
-            "es-MX-JorgeNeural",
+            voice="es-MX-JorgeNeural",
             rate="-18%",
             volume="-4%",
-            pitch="-8Hz"
+            pitch="-5Hz"
         )
         await comunicador.save(mp3_path)
 
     try:
-        asyncio.run(sintetizar())
+        # Ejecutamos TTS en un event loop propio. Esto evita depender del
+        # estado del event loop de Streamlit.
+        try:
+            asyncio.run(sintetizar())
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            try:
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(sintetizar())
+            finally:
+                loop.close()
+                asyncio.set_event_loop(None)
 
-        # Bajamos el tono manteniendo aproximadamente la misma duración y
-        # añadimos únicamente una reverberación corta y discreta.
+        if not os.path.exists(mp3_path) or os.path.getsize(mp3_path) < 1000:
+            return None
+
+        # Voz grave + cuerpo + reverberación suave.
+        # La reverberación usa reflexiones cortas, sin un eco separado.
         filtro = (
             "asetrate=44100*0.82,"
             "aresample=44100,"
             "atempo=1.219512,"
             "lowpass=f=520,"
             "aecho=0.80:0.72:50|100|160|240:0.18|0.13|0.09|0.06,"
-            "loudnorm=I=-16:TP=-1.5:LRA=7"
+            "alimiter=limit=0.88"
         )
 
         comando = [
@@ -258,8 +275,18 @@ def generar_voz_ultratumba(texto, semilla):
             "-c:a", "pcm_s16le",
             wav_path
         ]
-        resultado = subprocess.run(comando, capture_output=True, text=True)
+
+        resultado = subprocess.run(
+            comando,
+            capture_output=True,
+            text=True,
+            timeout=120
+        )
+
         if resultado.returncode != 0:
+            return None
+
+        if not os.path.exists(wav_path) or os.path.getsize(wav_path) < 1000:
             return None
 
         with open(wav_path, "rb") as f:
@@ -267,6 +294,7 @@ def generar_voz_ultratumba(texto, semilla):
 
     except Exception:
         return None
+
     finally:
         for ruta in (mp3_path, wav_path):
             try:
