@@ -3,3 +3,4 @@ reportlab
 numpy
 scipy
 pyttsx3
+ffmpeg
