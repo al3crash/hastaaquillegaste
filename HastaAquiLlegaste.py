@@ -280,9 +280,9 @@ def generar_voz_ultratumba(texto):
         comando_tts = [
             edge_tts_bin,
             "--voice", "es-MX-JorgeNeural",
-            "--rate=-18%",
-            "--volume=-4%",
-            "--pitch=-5Hz",
+            "--rate=-40%",
+            "--volume=-3%",
+            "--pitch=-25Hz",
             "--text", texto,
             "--write-media", mp3_path,
         ]
