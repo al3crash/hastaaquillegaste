@@ -43,7 +43,8 @@ PAYPAL_URL = "https://www.paypal.com/ncp/payment/HAALKPRK6DT8G"
 # OPENAI_API_KEY_SERVIDOR = "sk-proj-xxxxxxxxxxxxxxxxxxxxxxxx"
 #
 # 👇 PEGA TU CLAVE ENTRE LAS COMILLAS DE ESTA LÍNEA:
-OPENAI_API_KEY_SERVIDOR = "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"
+OPENAI_API_KEY_SERVIDOR = "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"
+
 
 # Modelo usado por "MI MUERTE MÁS DETALLADA".
 # Puedes cambiarlo si tu proyecto tiene acceso a otro modelo.
