@@ -49,6 +49,31 @@ GEMINI_API_KEY_URL = "https://github.com/al3crash/hastaaquillegaste/blob/main/mm
 # Modelo estable con nivel gratuito disponible actualmente.
 GEMINI_MODEL = "gemini-2.5-flash-lite"
 
+# ============================================================
+# ESTADO DE LA APLICACIÓN
+# ============================================================
+# Streamlit no crea automáticamente estas claves de session_state.
+# Deben existir antes de cualquier lectura como:
+# st.session_state.ritual_iniciado
+# De lo contrario, la aplicación termina con AttributeError al arrancar.
+ESTADO_INICIAL = {
+    "ritual_iniciado": False,
+    "resultado_generado": False,
+    "resultado": None,
+    "audio_generado": None,
+    "audio_error": None,
+    "pdf_generado": None,
+    "ia_detalle": None,
+    "ia_error": None,
+    "folio": None,
+}
+
+for _clave, _valor in ESTADO_INICIAL.items():
+    if _clave not in st.session_state:
+        st.session_state[_clave] = _valor
+
+del _clave, _valor
+
 
 def obtener_api_key():
     """Obtiene la clave de Gemini de forma segura y sin pedirla al usuario."""
