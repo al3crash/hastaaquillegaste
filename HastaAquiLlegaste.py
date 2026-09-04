@@ -282,7 +282,7 @@ def generar_voz_ultratumba(texto):
             "--voice", "es-MX-JorgeNeural",
             "--rate=-60%",
             "--volume=-3%",
-            "--pitch=-50Hz",
+            "--pitch=-85Hz",
             "--text", texto,
             "--write-media", mp3_path,
         ]
