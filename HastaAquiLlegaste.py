@@ -28,25 +28,24 @@ st.set_page_config(
 PAYPAL_URL = "https://www.paypal.com/ncp/payment/HAALKPRK6DT8G"
 
 # ============================================================
-# OPENAI / CHATGPT
+# DEEPSEEK
 # ============================================================
-# ============================================================
-# 🔐 API DE OPENAI DESDE GITHUB
-# ============================================================
-# El programa NO le pide la API key al usuario.
-# Lee automáticamente el contenido de mms.txt desde GitHub.
+# La aplicación NO le pide la API key al usuario.
+# Lee automáticamente la clave desde mms.txt mediante una URL RAW.
 #
-# IMPORTANTE: si mms.txt es público, la API key también será pública
-# y cualquier persona podría copiarla y consumir tu saldo.
-# Para una aplicación pública, lo más seguro es usar st.secrets.
-# Si aun así quieres usar GitHub, coloca aquí la URL RAW de mms.txt.
+# IMPORTANTE:
+# No hagas público mms.txt. Una API key expuesta puede ser copiada
+# y utilizada por terceros. Para producción, es preferible usar
+# st.secrets o una variable de entorno.
 #
-# EJEMPLO:
+# Coloca aquí la URL RAW de tu archivo mms.txt:
 # https://raw.githubusercontent.com/TU_USUARIO/TU_REPOSITORIO/main/mms.txt
-MMS_API_KEY_URL = "https://github.com/al3crash/hastaaquillegaste/blob/main/mms.txt"
+DEEPSEEK_API_KEY_URL = "https://raw.githubusercontent.com/TU_USUARIO/TU_REPOSITORIO/main/mms.txt"
 
-# Modelo usado por "MI MUERTE MÁS DETALLADA".
-OPENAI_MODEL = "gpt-5.6-luna"
+# Modelo que utilizará "MI MUERTE MÁS DETALLADA".
+# DeepSeek ofrece compatibilidad con el formato de OpenAI.
+DEEPSEEK_MODEL = "deepseek-v4-pro"
+
 
 for key, default in {
     "ritual_iniciado": False,
@@ -865,21 +864,21 @@ def instalar_ambiente():
 
 
 # ============================================================
-# OPENAI
+# DEEPSEEK API
 # ============================================================
 def obtener_api_key():
-    """Descarga la API key desde el archivo mms.txt alojado en GitHub."""
+    """Descarga la API key de DeepSeek desde mms.txt."""
     import urllib.request
 
-    if not MMS_API_KEY_URL or "TU_USUARIO" in MMS_API_KEY_URL or "TU_REPOSITORIO" in MMS_API_KEY_URL:
+    if not DEEPSEEK_API_KEY_URL or "TU_USUARIO" in DEEPSEEK_API_KEY_URL or "TU_REPOSITORIO" in DEEPSEEK_API_KEY_URL:
         raise RuntimeError(
-            "No configuraste MMS_API_KEY_URL. Coloca la URL RAW de GitHub "
+            "No configuraste DEEPSEEK_API_KEY_URL. Coloca la URL RAW de GitHub "
             "que apunta a mms.txt."
         )
 
     try:
         request = urllib.request.Request(
-            MMS_API_KEY_URL,
+            DEEPSEEK_API_KEY_URL,
             headers={"User-Agent": "HastaAquiLlegaste/1.0"},
         )
         with urllib.request.urlopen(request, timeout=10) as response:
@@ -890,13 +889,120 @@ def obtener_api_key():
             f"Verifica la URL RAW y que el archivo exista. Detalle: {exc}"
         ) from exc
 
-    # Permite que mms.txt tenga solamente la clave, con espacios o saltos de línea.
-    api_key = api_key.strip().strip('\"').strip("'")
+    # Permite que mms.txt tenga solamente la clave, con espacios
+    # o saltos de línea.
+    api_key = api_key.strip().strip('"').strip("'")
 
     if not api_key:
         raise RuntimeError("mms.txt está vacío o no contiene una API key válida.")
 
     return api_key
+
+
+def generar_muerte_detallada_con_ia(resultado):
+    try:
+        api_key = obtener_api_key()
+    except Exception as exc:
+        return None, str(exc)
+
+    try:
+        from openai import OpenAI
+    except ImportError:
+        return None, (
+            "No está instalada la librería 'openai'. "
+            "Agrega 'openai' a requirements.txt y vuelve a desplegar."
+        )
+
+    try:
+        # DeepSeek utiliza una API compatible con el SDK de OpenAI.
+        cliente = OpenAI(
+            api_key=api_key,
+            base_url="https://api.deepseek.com"
+        )
+
+        prompt = f"""
+Eres el narrador ficticio de un expediente paranormal llamado
+"HASTA AQUÍ LLEGASTE". Debes escribir una reconstrucción narrativa
+oscura, cinematográfica y perturbadora basada exclusivamente en los
+datos proporcionados.
+
+IMPORTANTE:
+- Esto es ficción y entretenimiento.
+- NO presentes el texto como una predicción real.
+- NO afirmes que puedes saber cuándo o cómo morirá realmente una persona.
+- No uses gore explícito ni describas mutilaciones.
+- No des instrucciones peligrosas.
+- No inventes datos médicos reales.
+- No cambies la causa principal del expediente.
+- Mantén la narración en español.
+- Usa segunda persona.
+- Hazla bastante más detallada que la sentencia normal.
+- Incluye: ambiente, momento del día, señales previas, desarrollo del
+  incidente, instante decisivo, reacción del entorno y cierre del expediente.
+- No menciones que eres una IA.
+- No uses encabezados excesivos. Puede ser una narración continua con
+  pequeños apartados si ayudan a la lectura.
+
+DATOS DEL EXPEDIENTE:
+Nombre: {resultado["nombre"]}
+Edad actual: {resultado["edad"]}
+Sexo: {resultado["sexo"]}
+Ocupación: {resultado["ocupacion"]}
+Transporte: {resultado["transporte"]}
+Horario: {resultado["horario"]}
+Visibilidad: {resultado["visibilidad"]}
+Entorno: {resultado["entorno"]}
+Clima: {resultado["clima"]}
+Sueño: {resultado["sueño"]}
+Fatiga: {resultado["fatiga"]}
+Atención: {resultado["atencion"]}
+Lugar habitual: {resultado["lugar_frecuente"]}
+Lugar: {resultado["lugar"]}
+Escenario principal: {resultado["escenario"]}
+Causa narrativa: {resultado["causa"]}
+Miedo principal: {resultado["miedo"]}
+Segundo miedo: {resultado["segundo_miedo"]}
+
+Escribe una reconstrucción de aproximadamente 700 a 1000 palabras.
+El tono debe parecer un expediente secreto del "Más Allá", oscuro,
+serio y cinematográfico, pero claramente ficticio.
+"""
+
+        respuesta = cliente.chat.completions.create(
+            model=DEEPSEEK_MODEL,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Escribe una narración de ficción paranormal en español. "
+                        "No hagas predicciones reales de muerte. "
+                        "No uses gore explícito. "
+                        "Mantén el texto inmersivo y coherente con los datos."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": prompt,
+                },
+            ],
+            stream=False,
+            max_tokens=1800,
+            reasoning_effort="high",
+            extra_body={"thinking": {"type": "enabled"}},
+        )
+
+        texto = respuesta.choices[0].message.content
+
+        if not texto:
+            return None, "DeepSeek respondió, pero no devolvió texto."
+
+        return texto.strip(), None
+
+    except Exception as exc:
+        return None, (
+            f"No fue posible consultar la API de DeepSeek.\n"
+            f"{type(exc).__name__}: {exc}"
+        )
 
 
 def generar_muerte_detallada_con_ia(resultado):
@@ -986,7 +1092,7 @@ serio y cinematográfico, pero claramente ficticio.
 
     except Exception as exc:
         return None, (
-            f"No fue posible consultar la API de ChatGPT.\n"
+            f"No fue posible consultar la API de DeepSeek.\n"
             f"{type(exc).__name__}: {exc}"
         )
 
