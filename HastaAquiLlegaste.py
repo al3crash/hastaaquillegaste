@@ -8,14 +8,16 @@ import os
 import shutil
 import tempfile
 import subprocess
-import asyncio
 from datetime import datetime, timedelta
 
 from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 
+# ============================================================
+# CONFIGURACIÓN
+# ============================================================
 st.set_page_config(
     page_title="HASTA AQUÍ LLEGASTE — Voz de Ultratumba",
     page_icon="👁️",
@@ -23,17 +25,25 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-# ============================================================
-# CONFIGURACIÓN PÚBLICA
-# ============================================================
-# Cambia estos valores si quieres usar otro contador o tu enlace de PayPal.
-
-
 PAYPAL_URL = "https://www.paypal.com/ncp/payment/HAALKPRK6DT8G"
 
 # ============================================================
-# ESTADO PERSISTENTE
+# OPENAI / CHATGPT
 # ============================================================
+# IMPORTANTE:
+# NO pongas aquí tu API key si la aplicación será pública.
+# El usuario la introduce desde la interfaz en un campo de contraseña.
+#
+# Si tú quieres usar una clave privada del servidor, puedes usar:
+# OPENAI_API_KEY_SERVIDOR = st.secrets.get("OPENAI_API_KEY", "")
+#
+# Para la opción solicitada, déjalo vacío:
+OPENAI_API_KEY_SERVIDOR = "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"
+
+# Modelo usado por "MI MUERTE MÁS DETALLADA".
+# Puedes cambiarlo si tu cuenta tiene acceso a otro modelo.
+OPENAI_MODEL = "gpt-5.6-luna"
+
 for key, default in {
     "ritual_iniciado": False,
     "resultado_generado": False,
@@ -42,6 +52,9 @@ for key, default in {
     "audio_error": None,
     "pdf_generado": None,
     "folio": None,
+    "ia_detalle": None,
+    "ia_error": None,
+    "api_key_usuario": "",
 }.items():
     if key not in st.session_state:
         st.session_state[key] = default
@@ -59,8 +72,9 @@ def limpiar_todo():
         "campo_cansado", "campo_objetos", "campo_visibilidad",
         "campo_atencion", "campo_lugar", "campo_creencias",
         "campo_terror", "campo_reliquias", "campo_temor",
-        "campo_segundo_temor",
+        "campo_segundo_temor", "api_key_usuario",
     ]
+
     for key in widget_keys:
         st.session_state.pop(key, None)
 
@@ -71,6 +85,8 @@ def limpiar_todo():
     st.session_state.audio_error = None
     st.session_state.pdf_generado = None
     st.session_state.folio = None
+    st.session_state.ia_detalle = None
+    st.session_state.ia_error = None
 
 
 # ============================================================
@@ -237,7 +253,31 @@ p, label {
     padding-top:16px;
     border-top:1px solid #21102e;
 }
-
+.ia-detalle {
+    background:radial-gradient(circle at 50% 0%,#21102e 0%,#09050e 72%);
+    border:1px solid #00ff66;
+    border-radius:8px;
+    padding:20px;
+    margin:18px auto;
+    color:#d6d6df;
+    font-family:"Courier New",monospace;
+    font-size:12px;
+    line-height:1.75;
+    box-shadow:0 0 25px rgba(0,255,102,.08);
+}
+.ia-detalle h4 {
+    color:#00ff66;
+    text-align:center;
+    font-family:Georgia,serif;
+    letter-spacing:2px;
+    margin:0 0 15px;
+}
+.api-aviso {
+    color:#777785 !important;
+    font-size:10px !important;
+    line-height:1.5;
+    text-align:center;
+}
 @media (max-width:600px) {
     .block-container { padding-left:.7rem; padding-right:.7rem; padding-top:1.2rem; }
     h1 { font-size:1.7rem !important; letter-spacing:2px; }
@@ -280,31 +320,386 @@ def dibujar_codigo_barras(canvas, x, y, semilla):
 
 
 # ============================================================
-# TTS CORREGIDO Y ROBUSTO
+# ALGORITMO NUEVO DE CAUSAS
+# ============================================================
+# En lugar de elegir simplemente un escenario al azar, cada causa
+# recibe puntos según las respuestas. La causa dominante gana.
+# El desempate conserva una pequeña variación narrativa.
 #
-# CAMBIOS IMPORTANTES:
-# 1. edge-tts se ejecuta con subprocess y su CLI, evitando problemas
-#    de event loops de Streamlit.
-# 2. Se comprueba que la generación realmente produjo el MP3.
-# 3. FFmpeg se localiza explícitamente.
-# 4. Se devuelve también el error real para poder diagnosticar.
-# 5. Se elimina la dependencia del parámetro "semilla", que no era usado.
-# 6. Se usa una carpeta temporal propia y se limpian todos los archivos.
+# IMPORTANTE: el resultado es ficción para el entretenimiento.
+# No representa una predicción médica, estadística ni real de muerte.
+# ============================================================
+def determinar_causa(
+    transporte_principal,
+    tiempo_desplazamiento,
+    horario_mayor_riesgo,
+    entorno_urbano,
+    sismos_zona,
+    clima_exposicion,
+    deportes_extremos,
+    sueño,
+    fatiga,
+    escaleras,
+    agua,
+    maquinaria,
+    conducir_cansado,
+    visibilidad,
+    atencion,
+    lugar_frecuente,
+    lugar_temido,
+    segundo_temor,
+    piso,
+    vivienda,
+    rng,
+):
+    causas = {
+        "ACCIDENTE VEHICULAR": {
+            "puntos": 0,
+            "desc": (
+                "El trayecto comenzó con normalidad. Una maniobra inesperada, "
+                "una distancia demasiado corta y un instante de reacción "
+                "insuficiente transformaron una ruta conocida en una emergencia."
+            ),
+        },
+        "COLISIÓN EN MOTOCICLETA": {
+            "puntos": 0,
+            "desc": (
+                "La motocicleta avanzaba por una ruta habitual. La combinación "
+                "de superficie irregular, tráfico y un margen de reacción reducido "
+                "convirtió un pequeño cambio de trayectoria en el punto decisivo."
+            ),
+        },
+        "MICROSUEÑO AL VOLANTE": {
+            "puntos": 0,
+            "desc": (
+                "La fatiga acumulada pasó inadvertida hasta que la atención "
+                "desapareció durante una fracción de segundo. Cuando regresó, "
+                "la posición del vehículo ya no coincidía con la ruta segura."
+            ),
+        },
+        "CAÍDA EN ESTRUCTURA": {
+            "puntos": 0,
+            "desc": (
+                "Un desnivel, una superficie inestable o un punto de apoyo "
+                "deficiente alteraron una acción cotidiana. La caída ocurrió "
+                "antes de que existiera tiempo suficiente para recuperar el equilibrio."
+            ),
+        },
+        "ACCIDENTE LABORAL": {
+            "puntos": 0,
+            "desc": (
+                "La rutina había convertido el procedimiento en algo automático. "
+                "Una pequeña anomalía pasó inadvertida y una instalación, herramienta "
+                "o mecanismo dejó de comportarse como se esperaba."
+            ),
+        },
+        "INCIDENTE ACUÁTICO": {
+            "puntos": 0,
+            "desc": (
+                "El agua parecía estable desde la distancia. Una corriente, "
+                "un cambio de posición o una pérdida de referencia hizo que "
+                "la distancia hacia un punto seguro fuera mayor de lo previsto."
+            ),
+        },
+        "EVENTO SÍSMICO": {
+            "puntos": 0,
+            "desc": (
+                "La primera vibración fue casi imperceptible. Después, el espacio "
+                "conocido comenzó a responder con violencia y varios objetos "
+                "perdieron sus puntos de apoyo al mismo tiempo."
+            ),
+        },
+        "TORMENTA ELÉCTRICA": {
+            "puntos": 0,
+            "desc": (
+                "La visibilidad cayó rápidamente. Lluvia, viento y descargas "
+                "alteraron el entorno hasta volver difícil distinguir el camino "
+                "seguro de las zonas de peligro."
+            ),
+        },
+        "ACCIDENTE EN ACTIVIDAD EXTREMA": {
+            "puntos": 0,
+            "desc": (
+                "La experiencia había hecho que muchos riesgos parecieran controlables. "
+                "Esta vez una variación mínima apareció justo cuando ya no existía "
+                "espacio suficiente para corregirla."
+            ),
+        },
+        "INCIDENTE EN LUGAR AISLADO": {
+            "puntos": 0,
+            "desc": (
+                "La situación ocurrió lejos de otras personas. La ausencia de "
+                "testigos y la distancia hacia un punto de ayuda hicieron que "
+                "el tiempo se convirtiera en un factor decisivo."
+            ),
+        },
+        "ACCIDENTE EN ALTURA": {
+            "puntos": 0,
+            "desc": (
+                "La rutina se desarrollaba varios niveles por encima del suelo. "
+                "Un punto de apoyo perdió estabilidad y el margen para recuperar "
+                "la posición desapareció demasiado rápido."
+            ),
+        },
+        "INCIDENTE EN ESPACIO CERRADO": {
+            "puntos": 0,
+            "desc": (
+                "El espacio dejó de ser una simple habitación o estructura. "
+                "Una falla inesperada bloqueó la salida y convirtió los minutos "
+                "siguientes en una secuencia de decisiones cada vez más difíciles."
+            ),
+        },
+        "ACCIDENTE IMPREVISTO": {
+            "puntos": 0,
+            "desc": (
+                "El escenario parecía completamente normal. Precisamente por eso "
+                "nadie identificó el peligro hasta que una cadena de pequeños "
+                "acontecimientos ya no pudo detenerse."
+            ),
+        },
+    }
+
+    # ---- Transporte y exposición ----
+    if "Automóvil" in transporte_principal:
+        causas["ACCIDENTE VEHICULAR"]["puntos"] += 30
+    if "Motocicleta" in transporte_principal:
+        causas["COLISIÓN EN MOTOCICLETA"]["puntos"] += 42
+    if "Metro" in transporte_principal or "Tren" in transporte_principal:
+        causas["ACCIDENTE IMPREVISTO"]["puntos"] += 8
+    if "Autobús" in transporte_principal or "Microbús" in transporte_principal:
+        causas["ACCIDENTE VEHICULAR"]["puntos"] += 14
+    if "Avión" in transporte_principal:
+        causas["ACCIDENTE IMPREVISTO"]["puntos"] += 12
+
+    if tiempo_desplazamiento == "2 a 4 horas":
+        causas["ACCIDENTE VEHICULAR"]["puntos"] += 8
+        causas["COLISIÓN EN MOTOCICLETA"]["puntos"] += 8
+    elif tiempo_desplazamiento == "Más de 4 horas":
+        causas["ACCIDENTE VEHICULAR"]["puntos"] += 12
+        causas["COLISIÓN EN MOTOCICLETA"]["puntos"] += 12
+
+    # ---- Horario / visibilidad ----
+    if horario_mayor_riesgo == "Noche":
+        causas["ACCIDENTE VEHICULAR"]["puntos"] += 8
+        causas["COLISIÓN EN MOTOCICLETA"]["puntos"] += 8
+        causas["INCIDENTE EN LUGAR AISLADO"]["puntos"] += 4
+    elif horario_mayor_riesgo == "Madrugada":
+        causas["ACCIDENTE VEHICULAR"]["puntos"] += 12
+        causas["COLISIÓN EN MOTOCICLETA"]["puntos"] += 12
+        causas["MICROSUEÑO AL VOLANTE"]["puntos"] += 10
+        causas["INCIDENTE EN LUGAR AISLADO"]["puntos"] += 5
+
+    if visibilidad == "Variable":
+        causas["ACCIDENTE VEHICULAR"]["puntos"] += 4
+        causas["COLISIÓN EN MOTOCICLETA"]["puntos"] += 4
+    elif visibilidad == "Mala":
+        causas["ACCIDENTE VEHICULAR"]["puntos"] += 9
+        causas["COLISIÓN EN MOTOCICLETA"]["puntos"] += 10
+        causas["TORMENTA ELÉCTRICA"]["puntos"] += 3
+    elif visibilidad == "Muy mala":
+        causas["ACCIDENTE VEHICULAR"]["puntos"] += 13
+        causas["COLISIÓN EN MOTOCICLETA"]["puntos"] += 14
+        causas["TORMENTA ELÉCTRICA"]["puntos"] += 5
+
+    # ---- Cansancio / atención ----
+    if conducir_cansado == "Alguna vez":
+        causas["MICROSUEÑO AL VOLANTE"]["puntos"] += 15
+    elif conducir_cansado == "Frecuentemente":
+        causas["MICROSUEÑO AL VOLANTE"]["puntos"] += 38
+
+    if sueño == "Menos de 4":
+        causas["MICROSUEÑO AL VOLANTE"]["puntos"] += 18
+    elif sueño == "4 a 5":
+        causas["MICROSUEÑO AL VOLANTE"]["puntos"] += 12
+    elif sueño == "5 a 6":
+        causas["MICROSUEÑO AL VOLANTE"]["puntos"] += 5
+
+    if fatiga == "Alto":
+        causas["MICROSUEÑO AL VOLANTE"]["puntos"] += 7
+    elif fatiga == "Agotamiento extremo":
+        causas["MICROSUEÑO AL VOLANTE"]["puntos"] += 16
+
+    if atencion == "Distraído":
+        causas["MICROSUEÑO AL VOLANTE"]["puntos"] += 7
+        causas["ACCIDENTE VEHICULAR"]["puntos"] += 5
+    elif atencion == "Agotado":
+        causas["MICROSUEÑO AL VOLANTE"]["puntos"] += 12
+        causas["ACCIDENTE VEHICULAR"]["puntos"] += 5
+
+    # ---- Entorno físico ----
+    if maquinaria == "A veces":
+        causas["ACCIDENTE LABORAL"]["puntos"] += 10
+    elif maquinaria == "Frecuentemente":
+        causas["ACCIDENTE LABORAL"]["puntos"] += 35
+
+    if escaleras == "A veces":
+        causas["CAÍDA EN ESTRUCTURA"]["puntos"] += 8
+    elif escaleras == "Frecuentemente":
+        causas["CAÍDA EN ESTRUCTURA"]["puntos"] += 25
+
+    if agua == "A veces":
+        causas["INCIDENTE ACUÁTICO"]["puntos"] += 8
+    elif agua == "Frecuentemente":
+        causas["INCIDENTE ACUÁTICO"]["puntos"] += 30
+
+    if piso >= 10:
+        causas["ACCIDENTE EN ALTURA"]["puntos"] += 15
+    if piso >= 20:
+        causas["ACCIDENTE EN ALTURA"]["puntos"] += 20
+
+    if lugar_frecuente == "Edificio alto":
+        causas["ACCIDENTE EN ALTURA"]["puntos"] += 25
+    elif lugar_frecuente == "Obra":
+        causas["ACCIDENTE LABORAL"]["puntos"] += 24
+        causas["CAÍDA EN ESTRUCTURA"]["puntos"] += 12
+    elif lugar_frecuente == "Taller":
+        causas["ACCIDENTE LABORAL"]["puntos"] += 28
+    elif lugar_frecuente == "Carretera":
+        causas["ACCIDENTE VEHICULAR"]["puntos"] += 18
+        causas["COLISIÓN EN MOTOCICLETA"]["puntos"] += 12
+    elif lugar_frecuente == "Estación de transporte":
+        causas["ACCIDENTE IMPREVISTO"]["puntos"] += 12
+
+    if vivienda == "Lugar aislado":
+        causas["INCIDENTE EN LUGAR AISLADO"]["puntos"] += 22
+
+    # ---- Clima ----
+    if "Tormentas" in clima_exposicion:
+        causas["TORMENTA ELÉCTRICA"]["puntos"] += 30
+    elif "Lluvia" in clima_exposicion:
+        causas["ACCIDENTE VEHICULAR"]["puntos"] += 6
+        causas["COLISIÓN EN MOTOCICLETA"]["puntos"] += 10
+        causas["CAÍDA EN ESTRUCTURA"]["puntos"] += 3
+    elif "Cambios extremos" in clima_exposicion:
+        causas["TORMENTA ELÉCTRICA"]["puntos"] += 10
+
+    # ---- Sismos ----
+    if sismos_zona == "Sí, ocasional":
+        causas["EVENTO SÍSMICO"]["puntos"] += 12
+    elif sismos_zona == "Sí, frecuente":
+        causas["EVENTO SÍSMICO"]["puntos"] += 32
+
+    # ---- Deportes extremos ----
+    if deportes_extremos == "Pocas veces":
+        causas["ACCIDENTE EN ACTIVIDAD EXTREMA"]["puntos"] += 8
+    elif deportes_extremos == "Frecuentemente":
+        causas["ACCIDENTE EN ACTIVIDAD EXTREMA"]["puntos"] += 25
+    elif deportes_extremos == "Constantemente":
+        causas["ACCIDENTE EN ACTIVIDAD EXTREMA"]["puntos"] += 42
+
+    # ---- Miedos como moduladores, no como sentencia automática ----
+    miedo_map = {
+        "El mar / agua profunda": "INCIDENTE ACUÁTICO",
+        "Un volcán": "EVENTO SÍSMICO",
+        "Un terremoto": "EVENTO SÍSMICO",
+        "Una carretera vacía": "ACCIDENTE VEHICULAR",
+        "Una caída desde altura": "CAÍDA EN ESTRUCTURA",
+        "Un incendio": "ACCIDENTE IMPREVISTO",
+        "Una tormenta eléctrica": "TORMENTA ELÉCTRICA",
+        "Un edificio abandonado": "CAÍDA EN ESTRUCTURA",
+        "Un ascensor / espacio cerrado": "INCIDENTE EN ESPACIO CERRADO",
+        "Un bosque de noche": "INCIDENTE EN LUGAR AISLADO",
+        "La oscuridad total": "INCIDENTE EN LUGAR AISLADO",
+        "Estar completamente solo": "INCIDENTE EN LUGAR AISLADO",
+        "Una multitud": "ACCIDENTE IMPREVISTO",
+        "Un accidente aéreo": "ACCIDENTE IMPREVISTO",
+        "Un accidente automovilístico": "ACCIDENTE VEHICULAR",
+        "Animales agresivos": "ACCIDENTE IMPREVISTO",
+        "No poder pedir ayuda": "INCIDENTE EN LUGAR AISLADO",
+    }
+
+    if lugar_temido in miedo_map:
+        causas[miedo_map[lugar_temido]]["puntos"] += 9
+
+    segundo_map = {
+        "Agua profunda": "INCIDENTE ACUÁTICO",
+        "Fuego": "ACCIDENTE IMPREVISTO",
+        "Alturas": "ACCIDENTE EN ALTURA",
+        "Terremotos": "EVENTO SÍSMICO",
+        "Volcanes": "EVENTO SÍSMICO",
+        "Tormentas": "TORMENTA ELÉCTRICA",
+        "Accidentes": "ACCIDENTE IMPREVISTO",
+        "Espacios cerrados": "INCIDENTE EN ESPACIO CERRADO",
+        "Soledad": "INCIDENTE EN LUGAR AISLADO",
+        "Oscuridad": "INCIDENTE EN LUGAR AISLADO",
+        "Perder el control": "ACCIDENTE IMPREVISTO",
+        "Quedar atrapado": "INCIDENTE EN ESPACIO CERRADO",
+    }
+
+    if segundo_temor in segundo_map:
+        causas[segundo_map[segundo_temor]]["puntos"] += 4
+
+    # ---- Bonificaciones por combinaciones coherentes ----
+    if (
+        "Motocicleta" in transporte_principal
+        and horario_mayor_riesgo in ["Noche", "Madrugada"]
+        and visibilidad in ["Mala", "Muy mala"]
+    ):
+        causas["COLISIÓN EN MOTOCICLETA"]["puntos"] += 20
+
+    if (
+        "Automóvil" in transporte_principal
+        and conducir_cansado == "Frecuentemente"
+        and sueño in ["Menos de 4", "4 a 5", "5 a 6"]
+    ):
+        causas["MICROSUEÑO AL VOLANTE"]["puntos"] += 28
+
+    if (
+        escaleras == "Frecuentemente"
+        and piso >= 10
+    ):
+        causas["ACCIDENTE EN ALTURA"]["puntos"] += 18
+
+    if (
+        maquinaria == "Frecuentemente"
+        and lugar_frecuente in ["Obra", "Taller"]
+    ):
+        causas["ACCIDENTE LABORAL"]["puntos"] += 22
+
+    if (
+        agua == "Frecuentemente"
+        and lugar_temido == "El mar / agua profunda"
+    ):
+        causas["INCIDENTE ACUÁTICO"]["puntos"] += 20
+
+    if (
+        sismos_zona == "Sí, frecuente"
+        and lugar_temido == "Un terremoto"
+    ):
+        causas["EVENTO SÍSMICO"]["puntos"] += 20
+
+    if (
+        "Tormentas" in clima_exposicion
+        and lugar_temido == "Una tormenta eléctrica"
+    ):
+        causas["TORMENTA ELÉCTRICA"]["puntos"] += 20
+
+    # Si no hay una exposición fuerte, evitamos que un miedo aislado
+    # domine completamente el resultado.
+    max_puntos = max(v["puntos"] for v in causas.values())
+
+    if max_puntos < 20:
+        causas["ACCIDENTE IMPREVISTO"]["puntos"] += 8
+        causas["ACCIDENTE IMPREVISTO"]["puntos"] += rng.randint(0, 8)
+
+    # Elegimos entre las causas que están muy cerca del máximo.
+    # Esto mantiene variedad sin volver el resultado arbitrario.
+    max_puntos = max(v["puntos"] for v in causas.values())
+    candidatas = [
+        nombre for nombre, datos in causas.items()
+        if datos["puntos"] >= max_puntos - 7
+    ]
+
+    titulo = elegir(candidatas, rng)
+    descripcion = causas[titulo]["desc"]
+
+    return titulo, descripcion, causas[titulo]["puntos"]
+
+
+# ============================================================
+# TTS
 # ============================================================
 def generar_voz_ultratumba(texto):
-    """
-    Genera voz masculina grave usando edge-tts + FFmpeg.
-
-    Requisitos de Streamlit Community Cloud:
-      requirements.txt:
-          streamlit
-          reportlab
-          edge-tts
-
-      packages.txt:
-          ffmpeg
-    """
-
     edge_tts_bin = shutil.which("edge-tts")
     ffmpeg_bin = shutil.which("ffmpeg")
 
@@ -325,8 +720,6 @@ def generar_voz_ultratumba(texto):
     wav_path = os.path.join(carpeta, "voz_ultratumba.wav")
 
     try:
-        # edge-tts CLI es más estable en Streamlit Cloud que manejar
-        # manualmente event loops dentro de la ejecución de Streamlit.
         comando_tts = [
             edge_tts_bin,
             "--voice", "es-MX-JorgeNeural",
@@ -355,7 +748,6 @@ def generar_voz_ultratumba(texto):
         if not os.path.isfile(mp3_path) or os.path.getsize(mp3_path) < 1000:
             return None, "edge-tts terminó, pero no generó un archivo MP3 válido."
 
-        # Voz más grave + cuerpo + reverberación suave.
         filtro = (
             "asetrate=44100*0.82,"
             "aresample=44100,"
@@ -404,13 +796,12 @@ def generar_voz_ultratumba(texto):
         return None, "La generación de voz tardó demasiado y fue cancelada."
     except Exception as exc:
         return None, f"Error inesperado al generar la voz: {type(exc).__name__}: {exc}"
-
     finally:
         shutil.rmtree(carpeta, ignore_errors=True)
 
 
 # ============================================================
-# AUDIO AMBIENTAL PERSISTENTE
+# AMBIENTE
 # ============================================================
 def instalar_ambiente():
     try:
@@ -471,6 +862,111 @@ def instalar_ambiente():
 
 
 # ============================================================
+# OPENAI
+# ============================================================
+def obtener_api_key():
+    if OPENAI_API_KEY_SERVIDOR.strip():
+        return OPENAI_API_KEY_SERVIDOR.strip()
+    return st.session_state.get("api_key_usuario", "").strip()
+
+
+def generar_muerte_detallada_con_ia(resultado):
+    api_key = obtener_api_key()
+
+    if not api_key:
+        return None, (
+            "No se encontró una API key. "
+            "Escribe tu token en el campo «MI API DE CHATGPT» "
+            "antes de pulsar el botón."
+        )
+
+    try:
+        from openai import OpenAI
+    except ImportError:
+        return None, (
+            "No está instalada la librería oficial de OpenAI. "
+            "Agrega 'openai' a requirements.txt y vuelve a desplegar."
+        )
+
+    try:
+        cliente = OpenAI(api_key=api_key)
+
+        prompt = f"""
+Eres el narrador ficticio de un expediente paranormal llamado
+"HASTA AQUÍ LLEGASTE". Debes escribir una reconstrucción narrativa
+oscura, cinematográfica y perturbadora basada exclusivamente en los
+datos proporcionados.
+
+IMPORTANTE:
+- Esto es ficción y entretenimiento.
+- NO presentes el texto como una predicción real.
+- NO afirmes que puedes saber cuándo o cómo morirá realmente una persona.
+- No uses gore explícito ni describas mutilaciones.
+- No des instrucciones peligrosas.
+- No inventes datos médicos reales.
+- No cambies la causa principal del expediente.
+- Mantén la narración en español.
+- Usa segunda persona.
+- Hazla bastante más detallada que la sentencia normal.
+- Incluye: ambiente, momento del día, señales previas, desarrollo del
+  incidente, instante decisivo, reacción del entorno y cierre del expediente.
+- No menciones que eres una IA.
+- No uses encabezados excesivos. Puede ser una narración continua con
+  pequeños apartados si ayudan a la lectura.
+
+DATOS DEL EXPEDIENTE:
+Nombre: {resultado["nombre"]}
+Edad actual: {resultado["edad"]}
+Sexo: {resultado["sexo"]}
+Ocupación: {resultado["ocupacion"]}
+Transporte: {resultado["transporte"]}
+Horario: {resultado["horario"]}
+Visibilidad: {resultado["visibilidad"]}
+Entorno: {resultado["entorno"]}
+Clima: {resultado["clima"]}
+Sueño: {resultado["sueño"]}
+Fatiga: {resultado["fatiga"]}
+Atención: {resultado["atencion"]}
+Lugar habitual: {resultado["lugar_frecuente"]}
+Lugar: {resultado["lugar"]}
+Escenario principal: {resultado["escenario"]}
+Causa narrativa: {resultado["causa"]}
+Miedo principal: {resultado["miedo"]}
+Segundo miedo: {resultado["segundo_miedo"]}
+
+Escribe una reconstrucción de aproximadamente 700 a 1000 palabras.
+El tono debe parecer un expediente secreto del "Más Allá", oscuro,
+serio y cinematográfico, pero claramente ficticio.
+"""
+
+        respuesta = cliente.responses.create(
+            model=OPENAI_MODEL,
+            instructions=(
+                "Escribe una narración de ficción paranormal en español. "
+                "No hagas predicciones reales de muerte. "
+                "No uses gore explícito. "
+                "Mantén el texto inmersivo y coherente con los datos."
+            ),
+            input=prompt,
+            max_output_tokens=1800,
+            store=False,
+        )
+
+        texto = getattr(respuesta, "output_text", None)
+
+        if not texto:
+            return None, "La API respondió, pero no devolvió texto."
+
+        return texto.strip(), None
+
+    except Exception as exc:
+        return None, (
+            f"No fue posible consultar la API de ChatGPT.\n"
+            f"{type(exc).__name__}: {exc}"
+        )
+
+
+# ============================================================
 # ENCABEZADO
 # ============================================================
 st.markdown("<h1>⛧ HASTA AQUÍ LLEGASTE ⛧</h1>", unsafe_allow_html=True)
@@ -501,6 +997,8 @@ if not st.session_state.ritual_iniciado:
         st.session_state.audio_generado = None
         st.session_state.audio_error = None
         st.session_state.pdf_generado = None
+        st.session_state.ia_detalle = None
+        st.session_state.ia_error = None
 
         st.components.v1.html("""
         <script>
@@ -549,6 +1047,33 @@ st.markdown(
     unsafe_allow_html=True
 )
 st.write("---")
+
+
+# ============================================================
+# CONFIGURACIÓN DE IA
+# ============================================================
+with st.expander("🤖 CONFIGURACIÓN DE IA — OPCIONAL"):
+    st.markdown(
+        "### 🔐 MI API DE CHATGPT",
+        unsafe_allow_html=True
+    )
+
+    st.text_input(
+        "Coloca aquí tu API key:",
+        type="password",
+        key="api_key_usuario",
+        placeholder="sk-...",
+        help="La clave se utiliza solamente para generar la lectura detallada.",
+    )
+
+    st.markdown(
+        '<p class="api-aviso">'
+        "Tu API key no está escrita dentro del código. Si publicas esta aplicación, "
+        "no recomiendo colocar una clave fija en el código fuente. "
+        "El botón de lectura detallada solo funcionará cuando exista una clave válida."
+        "</p>",
+        unsafe_allow_html=True
+    )
 
 
 # ============================================================
@@ -851,8 +1376,6 @@ if enviar:
     else:
         nombre_str = nombre.strip().upper()
 
-        # Mientras se generan la lápida, el audio y el expediente,
-        # mostramos un estado visible para que el usuario sepa que el proceso sigue activo.
         with st.spinner("☠️ EL VELO SE ESTÁ ABRIENDO... GENERANDO LÁPIDA Y SENTENCIA DE ULTRATUMBA"):
             semilla = generar_semilla(
                 nombre_str, sexo, fecha_nacimiento, estado_civil,
@@ -865,9 +1388,12 @@ if enviar:
                 creencias, aficion_terror, reliquias, lugar_temido,
                 segundo_temor
             )
-    
+
             rng = random.Random(semilla)
-    
+
+            # ------------------------------------------------
+            # ÍNDICE NARRATIVO ORIGINAL, CONSERVADO
+            # ------------------------------------------------
             riesgo = 8
             riesgo += {"Bajo": 0, "Moderado": 5, "Alto": 10, "Crítico": 18}[entorno_urbano]
             riesgo += {
@@ -896,25 +1422,25 @@ if enviar:
                 "Distraído": 6,
                 "Agotado": 10
             }[atencion]
-    
+
             if "Motocicleta" in transporte_principal:
                 riesgo += 15
             elif "Automóvil" in transporte_principal:
                 riesgo += 7
-    
+
             if "Sí, frecuente" in sismos_zona:
                 riesgo += 7
             elif "Sí, ocasional" in sismos_zona:
                 riesgo += 3
-    
+
             if "Tormentas" in clima_exposicion:
                 riesgo += 5
-    
+
             if "Constantemente" in deportes_extremos:
                 riesgo += 15
             elif "Frecuentemente" in deportes_extremos:
                 riesgo += 8
-    
+
             riesgo += {
                 "Menos de 4": 10,
                 "4 a 5": 6,
@@ -923,312 +1449,97 @@ if enviar:
                 "7 a 8": 0,
                 "Más de 8": 0
             }[sueño]
-    
+
             riesgo += {
                 "Mínimo": 0,
                 "Estrés común": 2,
                 "Alto": 5,
                 "Agotamiento extremo": 9
             }[fatiga]
-    
+
             if tabaco == "Diariamente":
                 riesgo += 5
             if alcohol == "Frecuente":
                 riesgo += 4
-    
+
             if sustancias == "Regular":
                 riesgo += 8
             elif sustancias == "Ocasional":
                 riesgo += 3
-    
+
             if conducir_cansado == "Frecuentemente":
                 riesgo += 10
             elif conducir_cansado == "Alguna vez":
                 riesgo += 3
-    
+
             if maquinaria == "Frecuentemente":
                 riesgo += 8
             if escaleras == "Frecuentemente":
                 riesgo += 5
             if agua == "Frecuentemente":
                 riesgo += 4
-    
+
             riesgo = min(98, max(5, riesgo + rng.randint(-4, 7)))
-    
+
             nivel = (
                 "UMBRAL CRÍTICO" if riesgo >= 75
                 else "SOMBRA ELEVADA" if riesgo >= 55
                 else "VIGILIA" if riesgo >= 35
                 else "BAJO EL VELO"
             )
-    
+
             edad_actual = max(
                 1,
                 (datetime.now().date() - fecha_nacimiento).days // 365
             )
-    
+
             horizonte = rng.randint(8, 46)
-    
+
             if riesgo >= 75:
                 horizonte = rng.randint(4, 24)
             elif riesgo >= 55:
                 horizonte = rng.randint(8, 30)
             elif riesgo < 35:
                 horizonte = rng.randint(18, 46)
-    
+
             fecha_muerte = datetime.now() + timedelta(
                 days=int(horizonte * 365.25) + rng.randint(-180, 180)
             )
-    
+
             edad_muerte = calcular_edad_en_fecha(
                 fecha_nacimiento,
                 fecha_muerte
             )
-    
-            escenarios = []
-    
-            if "Motocicleta" in transporte_principal:
-                escenarios.append((
-                    "COLISIÓN EN TRAYECTO",
-                    "La superficie está húmeda y el tráfico avanza en oleadas. "
-                    "Un vehículo cambia de trayectoria demasiado tarde. "
-                    "El margen de reacción desaparece casi por completo."
-                ))
-    
-            if "Automóvil" in transporte_principal:
-                escenarios.append((
-                    "ACCIDENTE VEHICULAR",
-                    "El trayecto comienza como cualquier otro. Una maniobra "
-                    "inesperada, una distancia demasiado corta y un instante "
-                    "de indecisión convierten una ruta conocida en una escena "
-                    "que nadie esperaba."
-                ))
-    
-            if horario_mayor_riesgo in ["Noche", "Madrugada"]:
-                escenarios.append((
-                    "EL TRAYECTO SIN TESTIGOS",
-                    "La ciudad está casi vacía. La iluminación deja zonas "
-                    "enteras fuera de la vista y un ruido que al principio "
-                    "parece lejano termina formando parte de la última "
-                    "secuencia del expediente."
-                ))
-    
-            if "Frecuentemente" in maquinaria:
-                escenarios.append((
-                    "FALLA OPERATIVA",
-                    "La rutina había convertido el procedimiento en algo "
-                    "automático. Una pequeña anomalía pasa inadvertida y, "
-                    "cuando alguien comprende que el mecanismo no está "
-                    "respondiendo como debería, ya no queda suficiente margen."
-                ))
-    
-            if "Frecuentemente" in escaleras:
-                escenarios.append((
-                    "CAÍDA EN ESTRUCTURA",
-                    "Un desnivel conocido deja de serlo durante un segundo. "
-                    "La superficie, la postura y el punto de apoyo se combinan "
-                    "de una manera que transforma una acción cotidiana en "
-                    "una emergencia."
-                ))
-    
-            if "Frecuentemente" in agua:
-                escenarios.append((
-                    "EL AGUA",
-                    "La superficie parece estable hasta que una corriente "
-                    "cambia la posición del cuerpo. La distancia hacia un "
-                    "punto seguro resulta mayor de lo que parecía desde la orilla."
-                ))
-    
-            if "Sí, frecuente" in sismos_zona:
-                escenarios.append((
-                    "EL MOVIMIENTO",
-                    "Primero aparece una vibración tenue. Después, los objetos "
-                    "comienzan a responder y el espacio conocido pierde durante "
-                    "unos instantes sus referencias habituales."
-                ))
-    
-            if "Tormentas" in clima_exposicion:
-                escenarios.append((
-                    "TORMENTA ELÉCTRICA",
-                    "La visibilidad cae rápidamente. La lluvia golpea con tanta "
-                    "fuerza que oculta sonidos pequeños y el entorno se vuelve "
-                    "difícil de leer."
-                ))
-    
-            if "Constantemente" in deportes_extremos:
-                escenarios.append((
-                    "EL LÍMITE",
-                    "La experiencia había hecho que muchos riesgos parecieran "
-                    "controlables. Esta vez una falla mínima aparece justo "
-                    "cuando ya no existe suficiente espacio para corregirla."
-                ))
-    
-            if conducir_cansado == "Frecuentemente":
-                escenarios.append((
-                    "MICROSUEÑO",
-                    "Los ojos se cierran durante un instante que el cerebro "
-                    "no registra como sueño. Cuando la atención regresa, "
-                    "el escenario frente a ti ya ha cambiado."
-                ))
-    
-            if entorno_urbano == "Crítico" and horario_mayor_riesgo in ["Noche", "Madrugada"]:
-                escenarios.append((
-                    "REGRESO SIN TESTIGOS",
-                    "El trayecto habitual termina en un tramo aislado. "
-                    "La combinación de poca visibilidad, tránsito irregular "
-                    "y un entorno hostil deja muy poco margen para reaccionar."
-                ))
-    
-            if atencion in ["Distraído", "Agotado"] and sueño in ["Menos de 4", "4 a 5"]:
-                escenarios.append((
-                    "EL SEGUNDO PERDIDO",
-                    "El cuerpo llevaba horas pidiendo descanso. El error no "
-                    "aparece como una gran decisión equivocada, sino como "
-                    "una fracción de segundo en la que la atención abandona "
-                    "el entorno."
-                ))
-    
-            if lugar_frecuente == "Edificio alto" or piso >= 20:
-                escenarios.append((
-                    "ALTURA",
-                    "El expediente señala una rutina desarrollada a varios "
-                    "niveles del suelo. Un punto de apoyo inestable convierte "
-                    "un movimiento ordinario en una situación irreversible."
-                ))
-    
-            miedo_escenarios = {
-                "El mar / agua profunda": (
-                    "LA PROFUNDIDAD",
-                    "La superficie del agua parecía tranquila. Un cambio "
-                    "repentino en la corriente separó el cuerpo de la zona "
-                    "segura y la distancia hacia la orilla resultó engañosamente grande."
-                ),
-                "Un volcán": (
-                    "TIERRA EN LLAMAS",
-                    "La alerta había llegado, pero el entorno seguía "
-                    "pareciendo inmóvil. Una nube de ceniza redujo la visibilidad "
-                    "y convirtió una ruta conocida en un laberinto oscuro."
-                ),
-                "Un terremoto": (
-                    "EL SUELO CEDE",
-                    "La primera vibración fue casi imperceptible. Después, "
-                    "el edificio comenzó a responder con violencia y varios "
-                    "objetos perdieron sus puntos de apoyo al mismo tiempo."
-                ),
-                "Una carretera vacía": (
-                    "LA CARRETERA",
-                    "El tramo parecía interminable y apenas había otros vehículos. "
-                    "Un instante de mala visibilidad y una maniobra inesperada "
-                    "cambiaron el trayecto para siempre."
-                ),
-                "Una caída desde altura": (
-                    "EL BORDE",
-                    "Un punto de apoyo que parecía firme dejó de estarlo. "
-                    "El cuerpo perdió el equilibrio antes de que hubiera tiempo "
-                    "suficiente para recuperar la posición."
-                ),
-                "Un incendio": (
-                    "EL HUMO",
-                    "El fuego no fue lo primero que se volvió peligroso. "
-                    "Fue el humo, que redujo la visibilidad y desorientó "
-                    "la salida que segundos antes parecía evidente."
-                ),
-                "Una tormenta eléctrica": (
-                    "LA TORMENTA",
-                    "El cielo se cerró rápidamente. La lluvia, el viento y "
-                    "los destellos hicieron difícil distinguir qué sonidos "
-                    "pertenecían al entorno y cuáles anunciaban un peligro más cercano."
-                ),
-                "Un edificio abandonado": (
-                    "EL EDIFICIO VACÍO",
-                    "El lugar estaba inmóvil hasta que una estructura cedió "
-                    "en algún punto del interior. El sonido parecía lejano, "
-                    "pero la ruta de salida dejó de ser segura."
-                ),
-                "Un ascensor / espacio cerrado": (
-                    "SIN SALIDA",
-                    "El espacio se detuvo entre niveles. La iluminación falló "
-                    "y, durante los siguientes minutos, la sensación de encierro "
-                    "hizo que cada segundo pareciera mucho más largo."
-                ),
-                "Un bosque de noche": (
-                    "EL BOSQUE",
-                    "La oscuridad borró las referencias habituales. Un ruido "
-                    "detrás de los árboles provocó un cambio de dirección y "
-                    "esa decisión terminó alejando del camino seguro."
-                ),
-                "La oscuridad total": (
-                    "A CIEGAS",
-                    "Durante unos instantes no hubo ninguna referencia visual. "
-                    "El cuerpo avanzó confiando en la memoria del lugar, pero "
-                    "un obstáculo apareció donde no debía estar."
-                ),
-                "Estar completamente solo": (
-                    "SIN TESTIGOS",
-                    "El incidente ocurrió lejos de otras personas. Cuando "
-                    "finalmente alguien advirtió que algo había sucedido, "
-                    "el tiempo transcurrido ya había sido decisivo."
-                ),
-                "Una multitud": (
-                    "LA MULTITUD",
-                    "Un movimiento colectivo comenzó sin que fuera evidente "
-                    "su origen. En pocos segundos, el espacio personal desapareció "
-                    "y una salida aparentemente cercana quedó bloqueada."
-                ),
-                "Un accidente aéreo": (
-                    "EL VUELO",
-                    "Todo transcurría con normalidad hasta que una señal de "
-                    "emergencia interrumpió el silencio de la cabina. La tripulación "
-                    "actuó de inmediato, pero la secuencia se desarrolló demasiado rápido."
-                ),
-                "Un accidente automovilístico": (
-                    "EL IMPACTO",
-                    "Dos trayectorias se cruzaron en el momento equivocado. "
-                    "El primer sonido fue breve y seco, seguido por una sucesión "
-                    "de movimientos imposibles de detener."
-                ),
-                "Animales agresivos": (
-                    "EL ENCUENTRO",
-                    "El animal apareció a una distancia demasiado corta para "
-                    "permitir una retirada tranquila. El intento de escapar "
-                    "provocó una reacción inesperada del entorno."
-                ),
-                "No poder pedir ayuda": (
-                    "SIN SEÑAL",
-                    "La situación se volvió crítica mientras el dispositivo "
-                    "de comunicación permanecía sin señal. El lugar estaba "
-                    "suficientemente lejos para que la ayuda tardara demasiado en llegar."
-                ),
-            }
-    
-            if lugar_temido in miedo_escenarios:
-                escenarios.append(miedo_escenarios[lugar_temido])
-    
-            if not escenarios:
-                escenarios = [
-                    (
-                        "EL ACCIDENTE IMPREVISTO",
-                        "El escenario parece completamente normal. Precisamente "
-                        "por eso nadie identifica el peligro hasta que la cadena "
-                        "de pequeños acontecimientos ya no puede detenerse."
-                    ),
-                    (
-                        "UNA NOCHE EXTRAÑA",
-                        "No existe una señal evidente. Solo una sucesión de "
-                        "detalles pequeños que, vistos después, parecen haber "
-                        "estado apuntando hacia el mismo momento."
-                    ),
-                    (
-                        "EL DESCUIDO",
-                        "Una acción cotidiana se realiza de forma automática. "
-                        "Un error mínimo desencadena una secuencia que nadie había previsto."
-                    ),
-                ]
-    
-            titulo_escenario, descripcion_escenario = elegir(escenarios, rng)
-    
+
+            # ------------------------------------------------
+            # CAUSA NUEVA, BASADA EN PUNTUACIÓN
+            # ------------------------------------------------
+            titulo_escenario, descripcion_escenario, puntuacion_causa = determinar_causa(
+                transporte_principal,
+                tiempo_desplazamiento,
+                horario_mayor_riesgo,
+                entorno_urbano,
+                sismos_zona,
+                clima_exposicion,
+                deportes_extremos,
+                sueño,
+                fatiga,
+                escaleras,
+                agua,
+                maquinaria,
+                conducir_cansado,
+                visibilidad,
+                atencion,
+                lugar_frecuente,
+                lugar_temido,
+                segundo_temor,
+                piso,
+                vivienda,
+                rng,
+            )
+
             lugares = []
-    
+
             if "Automóvil" in transporte_principal:
                 lugares.append("una avenida de tránsito rápido")
             if "Motocicleta" in transporte_principal:
@@ -1251,12 +1562,12 @@ if enviar:
                 lugares.append(
                     "una estación de transporte durante una hora de alta circulación"
                 )
-    
+
             if not lugares:
                 lugares.append("un entorno cotidiano que conocías perfectamente")
-    
+
             lugar_final = elegir(lugares, rng)
-    
+
             detalle_psicologico = elegir([
                 "Lo inquietante es que durante los días anteriores habías notado pequeños detalles fuera de lugar.",
                 "Existe un instante previo en el que todo parece demasiado silencioso.",
@@ -1265,43 +1576,29 @@ if enviar:
                 "La parte más perturbadora es que el lugar era completamente familiar.",
                 "Horas antes, el expediente registra una rutina exactamente igual a muchas otras. Nadie esperaba que esa fuera la última.",
             ], rng)
-    
-            detalles_miedo = {
-                "Agua profunda": "El expediente también registra una incomodidad marcada ante la cercanía del agua.",
-                "Fuego": "El calor y el olor a humo aparecen entre los detalles que más alteran la reconstrucción.",
-                "Alturas": "La altura forma parte de los factores que el expediente considera especialmente sensibles.",
-                "Terremotos": "La actividad del suelo aparece como un factor psicológico relevante en la reconstrucción.",
-                "Volcanes": "La presencia de actividad volcánica aparece como una de las imágenes más inquietantes del expediente.",
-                "Tormentas": "Los cambios bruscos del clima forman parte de los elementos que elevan la tensión de la escena.",
-                "Accidentes": "La posibilidad de una cadena repentina de acontecimientos aparece repetidamente en el expediente.",
-                "Espacios cerrados": "El encierro aparece como uno de los elementos que más altera la percepción del tiempo.",
-                "Soledad": "La ausencia de testigos hace que la reconstrucción resulte especialmente perturbadora.",
-                "Oscuridad": "La falta de referencias visuales aparece como un elemento decisivo en la escena.",
-                "Perder el control": "La sensación de que los acontecimientos avanzan sin posibilidad de intervenir domina la reconstrucción.",
-                "Quedar atrapado": "La imposibilidad de abandonar el lugar aparece como uno de los detalles más inquietantes.",
-                "Ninguno": "",
-            }
-    
-            detalle_miedo = detalles_miedo.get(segundo_temor, "")
-            if detalle_miedo:
-                detalle_psicologico += " " + detalle_miedo
-    
+
+            if segundo_temor != "Ninguno":
+                detalle_psicologico += (
+                    " El expediente también registra una inquietud secundaria relacionada con "
+                    + segundo_temor.lower() + "."
+                )
+
             pareja_memoria = "esposa" if sexo == "Masculino" else "esposo"
-    
+
             dedicatoria = (
                 f"En memoria de tu {pareja_memoria}, tus amigos y seres queridos, "
                 "que conservan tu recuerdo y las pequeñas cosas que dejaste atrás."
             )
-    
+
             causa_final = (
                 f"{descripcion_escenario} El incidente ocurrió en {lugar_final}. "
                 f"{detalle_psicologico}"
             )
-    
+
             nacimiento_str = fecha_nacimiento.strftime("%d/%m/%Y")
             muerte_str = fecha_muerte.strftime("%d/%m/%Y")
             folio_num = f"DEF-{rng.randint(100000, 999999)}-2026"
-    
+
             texto_a_leer = (
                 f"Hasta aquí llegaste, {nombre_str}. La Voz de Ultratumba ha cerrado tu expediente. "
                 f"El escenario registrado es {titulo_escenario}. "
@@ -1309,7 +1606,7 @@ if enviar:
                 f"Muriste a los {edad_muerte} años. "
                 f"{dedicatoria}"
             )
-    
+
             resultado = dict(
                 nombre=nombre_str,
                 sexo=sexo,
@@ -1333,18 +1630,27 @@ if enviar:
                 miedo=lugar_temido,
                 segundo_miedo=segundo_temor,
                 fecha_registro=datetime.now().strftime("%d/%m/%Y"),
+                transporte=transporte_principal,
+                horario=horario_mayor_riesgo,
+                visibilidad=visibilidad,
+                entorno=entorno_urbano,
+                clima=clima_exposicion,
+                sueño=sueño,
+                fatiga=fatiga,
+                atencion=atencion,
+                lugar_frecuente=lugar_frecuente,
+                puntuacion_causa=puntuacion_causa,
             )
-    
+
             st.session_state.resultado = resultado
             st.session_state.folio = folio_num
             st.session_state.resultado_generado = True
             st.session_state.pdf_generado = None
-    
-            # ====================================================
-            # GENERACIÓN DE AUDIO
-            # ====================================================
+            st.session_state.ia_detalle = None
+            st.session_state.ia_error = None
+
             audio, error_audio = generar_voz_ultratumba(texto_a_leer)
-    
+
             st.session_state.audio_generado = audio
             st.session_state.audio_error = error_audio
 
@@ -1428,6 +1734,63 @@ if st.session_state.resultado_generado and st.session_state.resultado:
     """, unsafe_allow_html=True)
 
     # ========================================================
+    # MI MUERTE MÁS DETALLADA
+    # ========================================================
+    st.markdown("### 🕯️ Reconstrucción del Expediente")
+
+    st.markdown(
+        '<div class="oraculo-box">'
+        '<div class="oraculo-status">🤖 MODO DE NARRACIÓN AVANZADA</div>'
+        '<div style="color:#b5b5c3;font-family:monospace;font-size:11px;line-height:1.6;">'
+        "La lectura utiliza la causa generada por el expediente y tus respuestas "
+        "para construir una reconstrucción ficticia mucho más detallada."
+        "</div>"
+        "</div>",
+        unsafe_allow_html=True
+    )
+
+    if st.button(
+        "🩸 MI MUERTE MÁS DETALLADA",
+        use_container_width=True,
+        key="boton_muerte_detallada"
+    ):
+        with st.spinner("☠️ LA PARCA ESTÁ RECONSTRUYENDO LA ÚLTIMA SECUENCIA..."):
+            detalle, error = generar_muerte_detallada_con_ia(r)
+
+        st.session_state.ia_detalle = detalle
+        st.session_state.ia_error = error
+        st.rerun()
+
+    if st.session_state.ia_detalle:
+        texto_ia = html.escape(st.session_state.ia_detalle).replace("\n", "<br>")
+
+        st.markdown(
+            f"""
+            <div class="ia-detalle">
+                <h4>☠️ RECONSTRUCCIÓN CONFIDENCIAL</h4>
+                {texto_ia}
+                <br><br>
+                <div style="text-align:center;color:#777785;font-size:10px;">
+                    ESTA RECONSTRUCCIÓN ES FICCIÓN NARRATIVA Y NO REPRESENTA
+                    UNA PREDICCIÓN REAL DEL FUTURO.
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+    elif st.session_state.ia_error:
+        st.markdown(
+            f"""
+            <div class="oraculo-box">
+                <b>⚠️ LA RECONSTRUCCIÓN NO PUDO SER GENERADA</b>
+                <div class="error-voz">{html.escape(st.session_state.ia_error)}</div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+    # ========================================================
     # VOZ
     # ========================================================
     st.markdown("### 🎙️ Sentencia de Voz de Ultratumba")
@@ -1444,8 +1807,6 @@ if st.session_state.resultado_generado and st.session_state.resultado:
                  style="width:94%;height:48px;">
             <source src="data:audio/wav;base64,{audio_b64}" type="audio/wav">
           </audio>
-          <div style="color:#777785;font-size:10px;margin-top:10px;">
-                  </div>
         </div>
 
         <script>
@@ -1774,10 +2135,6 @@ if st.session_state.resultado_generado and st.session_state.resultado:
 # ============================================================
 # PIE DE PÁGINA / VISITAS / APOYO
 # ============================================================
-# Contador visual fijo. No depende de servicios externos ni de
-# variables de contador, por lo que no puede provocar errores.
-# El número es deliberadamente alto para mostrar que el portal
-# ya ha recibido muchas visitas.
 VISITAS_FALSAS = 27843
 
 st.markdown(
@@ -1793,9 +2150,6 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
-
-# Cambia únicamente esta dirección por tu enlace real de PayPal.
-PAYPAL_URL = "https://www.paypal.com/ncp/payment/HAALKPRK6DT8G"
 
 st.markdown(
     f"""
