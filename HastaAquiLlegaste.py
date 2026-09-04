@@ -1795,7 +1795,7 @@ st.markdown(
 )
 
 # Cambia únicamente esta dirección por tu enlace real de PayPal.
-PAYPAL_URL = "https://www.paypal.me/TU_USUARIO"
+PAYPAL_URL = "https://www.paypal.com/ncp/payment/HAALKPRK6DT8G"
 
 st.markdown(
     f"""
