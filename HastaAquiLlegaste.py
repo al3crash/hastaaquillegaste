@@ -1,1294 +1,1792 @@
-# ============================================================
-# SENTENCIA DE VOZ DE ULTRATUMBA
-# Versión SIN API de OpenAI
-# Compatible con Streamlit y preparada para Streamlit Cloud.
-#
-# ARCHIVOS QUE DEBES TENER:
-#   app.py              <- este código
-#   hell.mp3            <- música/ambiente de fondo
-#
-# requirements.txt:
-#   streamlit
-#   edge-tts
-#   reportlab
-#
-# packages.txt:
-#   ffmpeg
-#
-# IMPORTANTE:
-# - No utiliza API de OpenAI.
-# - La voz se genera con Microsoft Edge TTS.
-# - La misma voz generada se utiliza para reproducir y descargar.
-# - "Escuchar" y "Descargar acta" NO reinician los campos.
-# - El botón "Limpiar campos" es el único que limpia el formulario.
-# ============================================================
-
-import asyncio
-import html
-import os
-import random
-import re
-import subprocess
-import tempfile
-import uuid
-import json
-from datetime import date, datetime
-from pathlib import Path
-
 import streamlit as st
-from edge_tts import Communicate
-from reportlab.lib.pagesizes import LETTER
-from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.pdfbase import pdfmetrics
-from reportlab.lib.enums import TA_CENTER
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.units import cm
+import random
+import io
+import base64
+import html
+import hashlib
+import os
+import shutil
+import tempfile
+import subprocess
+import asyncio
+from datetime import datetime, timedelta
+
+from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 
-
-# ============================================================
-# CONFIGURACIÓN
-# ============================================================
-
 st.set_page_config(
-    page_title="Sentencia de Voz de Ultratumba",
-    page_icon="🕯️",
-    layout="wide",
+    page_title="HASTA AQUÍ LLEGASTE — Voz de Ultratumba",
+    page_icon="👁️",
+    layout="centered",
     initial_sidebar_state="collapsed",
 )
 
-BASE_DIR = Path(__file__).resolve().parent
-HELL_FILE = BASE_DIR / "hell.mp3"
-TEMP_DIR = Path(tempfile.gettempdir()) / "sentencia_ultratumba"
-TEMP_DIR.mkdir(parents=True, exist_ok=True)
-
 # ============================================================
-# VOZ
+# ESTADO PERSISTENTE
 # ============================================================
-#
-# Puedes cambiar aquí la voz y velocidad.
-#
-# Voces masculinas recomendadas:
-#   es-MX-JorgeNeural
-#   es-ES-AlvaroNeural
-#   es-ES-JorgeNeural
-#
-# Para una voz más grave:
-#   PITCH_SEMITONES = -2.5
-#
-# Para una voz todavía más grave:
-#   PITCH_SEMITONES = -3.5
-#
-# SPEED:
-#   0.90 = lenta
-#   1.00 = normal
-#   0.85 = más lenta y siniestra
-#
-VOICE = "es-MX-JorgeNeural"
-VOICE_RATE = "-10%"
-VOICE_VOLUME = "+0%"
+for key, default in {
+    "ritual_iniciado": False,
+    "resultado_generado": False,
+    "resultado": None,
+    "audio_generado": None,
+    "audio_error": None,
+    "pdf_generado": None,
+    "folio": None,
+}.items():
+    if key not in st.session_state:
+        st.session_state[key] = default
 
-# Grave, pero sin convertirla en una voz monstruosa artificial.
-PITCH_SEMITONES = -2.5
 
-# Reverberación MUY ligera.
-# No usamos eco fuerte ni efecto de sonidero.
-REVERB_DELAY_MS = 55
-REVERB_DECAY = 0.18
+def limpiar_todo():
+    widget_keys = [
+        "campo_nombre", "campo_sexo", "campo_fecha", "campo_estado",
+        "campo_dependientes", "campo_ocupacion", "campo_piso",
+        "campo_transporte", "campo_tiempo", "campo_horario",
+        "campo_entorno", "campo_sismos", "campo_clima", "campo_actividad",
+        "campo_extremos", "campo_sueno", "campo_fatiga", "campo_tabaco",
+        "campo_alcohol", "campo_sustancias", "campo_vivienda",
+        "campo_escaleras", "campo_agua", "campo_maquinaria",
+        "campo_cansado", "campo_objetos", "campo_visibilidad",
+        "campo_atencion", "campo_lugar", "campo_creencias",
+        "campo_terror", "campo_reliquias", "campo_temor",
+        "campo_segundo_temor",
+    ]
+    for key in widget_keys:
+        st.session_state.pop(key, None)
 
-# ============================================================
-# APOYO AL PROYECTO / CONTADOR DE VISITAS
-# ============================================================
-# IMPORTANTE:
-# Sustituye esta URL por TU enlace real de PayPal.
-# Ejemplo: https://www.paypal.me/TuUsuario
-PAYPAL_URL = "https://www.paypal.me/TU_USUARIO"
-
-# Contador local de visitas.
-# En Streamlit Cloud el archivo puede reiniciarse cuando el servicio
-# se reinicia o vuelve a desplegarse. Para un contador permanente
-# entre reinicios se requiere un servicio/base de datos externa.
-VISITS_FILE = BASE_DIR / "visitas.json"
+    st.session_state.ritual_iniciado = False
+    st.session_state.resultado_generado = False
+    st.session_state.resultado = None
+    st.session_state.audio_generado = None
+    st.session_state.audio_error = None
+    st.session_state.pdf_generado = None
+    st.session_state.folio = None
 
 
 # ============================================================
-# ESTILO
+# ESTILOS
 # ============================================================
-
-st.markdown(
-    """
+st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Share+Tech+Mono&display=swap');
-
-html, body, [class*="css"] {
-    font-family: 'Share Tech Mono', monospace;
+[data-testid="stAppViewContainer"] {
+    background: radial-gradient(circle at 50% 42%, #17051f 0%, #07020a 44%, #010102 100%);
+    min-height: 100vh;
 }
+[data-testid="stHeader"] { background: rgba(0,0,0,0); }
+[data-testid="stToolbar"] { visibility: hidden; }
+.block-container { max-width: 780px; padding-top: 1.5rem; padding-bottom: 4rem; }
 
-.stApp {
-    background:
-        radial-gradient(circle at 50% 15%, rgba(70, 25, 90, .22), transparent 35%),
-        radial-gradient(circle at 50% 70%, rgba(0, 255, 145, .07), transparent 38%),
-        #030305;
-    color: #ddd;
+h1 {
+    color: #00ff66 !important;
+    text-align: center;
+    font-family: Georgia, serif;
+    font-weight: bold;
+    letter-spacing: 4px;
+    text-shadow: 0 0 8px #00ff66, 0 0 22px #1b4d3e, 0 0 45px #3d0066;
 }
-
-h1, h2, h3 {
-    font-family: 'Cinzel', serif !important;
-    letter-spacing: 3px;
+h2, h3 {
+    color: #9d4edd !important;
+    text-align: center;
+    font-family: "Courier New", monospace;
+    letter-spacing: 2px;
 }
+p, label {
+    color: #b5b5c3 !important;
+    font-family: "Courier New", monospace;
+    font-size: 13px;
+}
+.stTextInput input, .stNumberInput input, .stSelectbox input {
+    background-color: #090810 !important;
+    color: #00ff66 !important;
+}
+.stButton > button, .stFormSubmitButton > button, .stDownloadButton > button {
+    background-color: #1a0033;
+    color: #00ff66 !important;
+    font-weight: bold;
+    font-family: Georgia, serif;
+    border: 2px solid #00ff66;
+    padding: 14px;
+    font-size: 15px;
+    letter-spacing: 2px;
+    transition: all .3s ease;
+    width: 100%;
+    min-height: 52px;
+}
+.stButton > button:hover, .stFormSubmitButton > button:hover, .stDownloadButton > button:hover {
+    background-color: #00ff66;
+    color: #020204 !important;
+    box-shadow: 0 0 30px #00ff66;
+}
+.contenedor-centrado { display:flex; justify-content:center; width:100%; padding:35px 0; }
 
-.ritual-title {
+.lapida-canvas {
+    background: radial-gradient(circle at 50% 20%, #35343a 0%, #18171c 45%, #0c0b0f 100%);
+    border: 5px double #00ff66;
+    border-radius: 180px 180px 25px 25px;
+    padding: 55px 28px 40px 28px;
+    color: #c1c1cb;
     text-align:center;
-    font-family:'Cinzel', serif;
-    font-size:42px;
-    letter-spacing:5px;
-    color:#b06cff;
-    text-shadow:0 0 15px rgba(160,70,255,.65);
-    margin-top:10px;
+    font-family:Georgia,serif;
+    box-shadow:0 20px 50px rgba(0,0,0,.95),0 0 35px rgba(0,255,102,.10);
+    width:min(470px,90vw);
+    margin:20px auto;
+    border-bottom:20px solid #080709;
+    box-sizing:border-box;
+    animation:aparecerLapida 1.4s ease;
 }
+@keyframes aparecerLapida {
+    from { opacity:0; transform:translateY(25px) scale(.96); filter:brightness(0); }
+    to { opacity:1; transform:translateY(0) scale(1); filter:brightness(1); }
+}
+.lapida-rip { font-size:clamp(30px,8vw,40px); font-weight:bold; color:#020204; letter-spacing:6px; margin-bottom:8px; text-shadow:0 1px 0 #666; }
+.lapida-nombre { font-size:clamp(18px,5vw,25px); font-weight:bold; color:#fff; text-transform:uppercase; letter-spacing:2px; overflow-wrap:anywhere; }
+.lapida-fechas { font-size:13px; color:#00ff66; font-style:italic; margin-bottom:22px; border-bottom:1px double #3d0066; padding-bottom:12px; }
+.lapida-causa { font-size:13px; color:#e2e2e9; line-height:1.6; text-align:justify; margin-bottom:25px; background:rgba(5,2,10,.72); padding:14px; border-top:1px solid #3d0066; border-bottom:1px solid #3d0066; }
+.lapida-dedicatoria { font-size:12px; color:#777785; font-style:italic; line-height:1.4; }
 
-.subtitle {
+.oraculo-box {
     text-align:center;
-    color:#777;
-    letter-spacing:3px;
-    margin-bottom:35px;
-}
-
-.palida {
-    position:relative;
-    max-width:720px;
-    margin:25px auto 45px auto;
-    padding:34px 32px;
-    border:2px solid #37ff9b;
-    border-radius:30px;
-    background:
-        linear-gradient(180deg, rgba(15,15,18,.96), rgba(5,5,7,.98));
-    box-shadow:
-        0 0 10px rgba(55,255,155,.45),
-        inset 0 0 40px rgba(0,0,0,.9);
-}
-
-.palida::before {
-    content:"";
-    position:absolute;
-    inset:-9px;
-    border:1px solid rgba(55,255,155,.22);
-    border-radius:35px;
-    pointer-events:none;
-}
-
-.lapida-nombre {
-    text-align:center;
-    font-family:'Cinzel', serif;
-    font-size:35px;
-    color:#eee;
-    letter-spacing:4px;
-    margin-bottom:15px;
-}
-
-.lapida-fechas {
-    text-align:center;
-    color:#8b8b8b;
-    margin-bottom:28px;
-}
-
-.lapida-causa {
-    background:rgba(255,255,255,.035);
-    border-radius:10px;
+    background:radial-gradient(circle at 50% 0%,#21102e 0%,#110b1a 65%);
     padding:18px;
-    line-height:1.7;
-    color:#d1d1d1;
+    border:1px solid #9d4edd;
+    border-radius:8px;
+    width:min(560px,94vw);
+    margin:0 auto 20px;
+    box-sizing:border-box;
+    box-shadow:0 0 25px rgba(123,44,191,.15);
 }
-
-.lapida-dedicatoria {
-    margin-top:20px;
-    padding-top:18px;
-    border-top:1px solid rgba(255,255,255,.12);
-    text-align:center;
-    color:#aaa;
-    line-height:1.8;
-}
-
-.expediente {
-    border:1px solid rgba(175,80,255,.6);
-    border-radius:12px;
+.oraculo-status { color:#00ff66 !important; font-family:monospace; font-size:12px; margin-bottom:12px; }
+.nota-voz { color:#777785 !important; font-family:monospace; font-size:10px; margin-top:10px; }
+.resultado-profundo {
+    background:rgba(4,2,7,.82);
+    border:1px solid #3d0066;
+    border-radius:8px;
     padding:18px;
-    color:#bbb;
-    background:rgba(90,20,120,.06);
-    line-height:1.7;
-}
-
-.sentencia-box {
-    border:1px solid rgba(180,80,255,.65);
-    border-radius:14px;
-    padding:25px;
-    background:rgba(30,10,40,.32);
-    box-shadow:0 0 25px rgba(130,50,255,.08);
-    line-height:1.9;
-    color:#ddd;
-}
-
-.final-text {
-    text-align:center;
-    margin:50px 0;
-    color:#26ff96;
-    font-family:'Cinzel', serif;
-    font-size:23px;
-    text-shadow:0 0 10px rgba(38,255,150,.35);
-}
-
-.reveal-wait {
-    border:1px solid #b45cff;
-    border-radius:14px;
-    padding:20px;
-    margin:18px 0;
-    background:
-        radial-gradient(circle at 50% 50%, rgba(160,60,255,.16), transparent 65%),
-        rgba(10,6,16,.96);
-    box-shadow:0 0 25px rgba(160,60,255,.16), inset 0 0 25px rgba(0,0,0,.8);
-    text-align:center;
-}
-
-.reveal-wait-title {
-    color:#c879ff;
-    font-family:'Cinzel', serif;
-    font-size:20px;
-    letter-spacing:3px;
-    margin-bottom:8px;
-}
-
-.reveal-wait-text {
-    color:#aaa;
+    margin:18px auto;
+    color:#c9c9d4;
+    font-family:"Courier New",monospace;
     font-size:12px;
     line-height:1.7;
+    box-shadow:inset 0 0 25px rgba(61,0,102,.12);
 }
-
-.footer-hud {
-    display:grid;
-    grid-template-columns:repeat(3,1fr);
-    gap:10px;
-    margin:28px 0 12px 0;
-    padding:12px;
-    border-top:1px solid rgba(55,255,155,.35);
-    border-bottom:1px solid rgba(180,92,255,.35);
-    background:rgba(5,5,8,.8);
-}
-
-.footer-item {
+.lectura-final {
+    color:#00ff66 !important;
     text-align:center;
-    color:#777;
-    font-size:10px;
+    font-family:Georgia,serif;
+    font-size:17px;
+    letter-spacing:1px;
+    line-height:1.7;
+    padding:18px;
+}
+.error-voz {
+    color:#ff6b6b;
+    font-family:monospace;
+    font-size:11px;
+    text-align:left;
+    margin-top:10px;
+    white-space:pre-wrap;
+}
+.contador-visitas {
+    text-align:center;
+    margin:28px auto 8px;
+    color:#777785;
+    font-family:"Courier New",monospace;
+    font-size:11px;
     letter-spacing:1px;
 }
-
-.footer-item span {
-    display:block;
-    margin-bottom:5px;
-}
-
-.footer-item strong {
-    display:block;
-    color:#37ff9b;
-    font-size:14px;
-    letter-spacing:2px;
-}
-
-.support-title {
+.apoyar-proyecto {
     text-align:center;
-    color:#a965ff;
-    font-family:'Cinzel', serif;
-    letter-spacing:2px;
-    font-size:13px;
-    margin:12px 0;
+    margin:14px auto 10px;
 }
-
-.footer-signature {
+.apoyar-proyecto a {
+    display:inline-block;
+    background:#1a0033;
+    color:#00ff66 !important;
+    border:1px solid #00ff66;
+    border-radius:5px;
+    padding:11px 22px;
+    text-decoration:none !important;
+    font-family:Georgia,serif;
+    font-weight:bold;
+    letter-spacing:1.5px;
+    box-shadow:0 0 12px rgba(0,255,102,.10);
+    transition:all .25s ease;
+}
+.apoyar-proyecto a:hover {
+    background:#00ff66;
+    color:#020204 !important;
+    box-shadow:0 0 24px rgba(0,255,102,.45);
+}
+.footer-alex {
     text-align:center;
-    color:#555;
+    color:#555564;
+    font-family:"Courier New",monospace;
     font-size:10px;
     letter-spacing:2px;
-    margin:18px 0 8px 0;
+    margin-top:26px;
+    padding-top:16px;
+    border-top:1px solid #21102e;
 }
 
-div.stButton > button {
-    width:100%;
-    border:2px solid #27ff9a;
-    background:linear-gradient(90deg, #161021, #241438, #161021);
-    color:#ddd;
-    letter-spacing:2px;
-    font-family:'Share Tech Mono', monospace;
-    min-height:52px;
-}
-
-div.stButton > button:hover {
-    border-color:#b45cff;
-    color:#fff;
-    box-shadow:0 0 18px rgba(180,92,255,.35);
-}
-
-[data-testid="stForm"] {
-    background:rgba(255,255,255,.015);
-    border:1px solid rgba(255,255,255,.08);
-    border-radius:15px;
-    padding:20px;
+@media (max-width:600px) {
+    .block-container { padding-left:.7rem; padding-right:.7rem; padding-top:1.2rem; }
+    h1 { font-size:1.7rem !important; letter-spacing:2px; }
+    .stButton > button,.stFormSubmitButton > button,.stDownloadButton > button { font-size:13px; }
+    .lapida-canvas { padding-left:18px; padding-right:18px; }
 }
 </style>
-""",
-    unsafe_allow_html=True,
-)
+""", unsafe_allow_html=True)
+
+
+def elegir(lista, rng):
+    return lista[rng.randrange(len(lista))]
+
+
+def generar_semilla(*valores):
+    texto = "|".join(str(v) for v in valores)
+    return int(hashlib.sha256(texto.encode("utf-8")).hexdigest()[:16], 16)
+
+
+def calcular_edad_en_fecha(fecha_nacimiento, fecha_muerte):
+    nacimiento = fecha_nacimiento
+    muerte = fecha_muerte.date()
+    edad = muerte.year - nacimiento.year
+    if (muerte.month, muerte.day) < (nacimiento.month, nacimiento.day):
+        edad -= 1
+    return max(0, edad)
+
+
+def dibujar_codigo_barras(canvas, x, y, semilla):
+    canvas.saveState()
+    rng = random.Random(semilla)
+    ancho_total = 0
+    for _ in range(42):
+        ancho = rng.choice([1, 1.5, 2, 3])
+        espacio = rng.choice([1, 1.5, 2])
+        canvas.setFillColor(colors.black)
+        canvas.rect(x + ancho_total, y, ancho, 40, fill=1, stroke=0)
+        ancho_total += ancho + espacio
+    canvas.restoreState()
 
 
 # ============================================================
-# FUNCIONES
+# TTS CORREGIDO Y ROBUSTO
+#
+# CAMBIOS IMPORTANTES:
+# 1. edge-tts se ejecuta con subprocess y su CLI, evitando problemas
+#    de event loops de Streamlit.
+# 2. Se comprueba que la generación realmente produjo el MP3.
+# 3. FFmpeg se localiza explícitamente.
+# 4. Se devuelve también el error real para poder diagnosticar.
+# 5. Se elimina la dependencia del parámetro "semilla", que no era usado.
+# 6. Se usa una carpeta temporal propia y se limpian todos los archivos.
 # ============================================================
-
-def limpiar_nombre(nombre: str) -> str:
-    nombre = nombre.strip()
-    nombre = re.sub(r'[\\/:*?"<>|]+', "", nombre)
-    nombre = re.sub(r"\s+", " ", nombre)
-    return nombre[:80] or "Sin_nombre"
-
-
-def sexo_texto(sexo: str) -> tuple[str, str]:
-    if sexo == "Masculino":
-        return "tu esposo", "él"
-    return "tu esposa", "ella"
-
-
-def calcular_indice(datos: dict) -> int:
-    score = 20
-
-    edad = int(datos["edad"])
-    if edad < 18:
-        score += 12
-    elif edad < 30:
-        score += 7
-    elif edad > 60:
-        score += 10
-
-    miedo = datos["miedo"]
-    if miedo in ["La oscuridad", "La muerte", "Estar solo/a", "Lo desconocido"]:
-        score += 15
-    elif miedo in ["El mar", "Un volcán", "Terremotos", "Alturas"]:
-        score += 9
-
-    escenario = datos["escenario"]
-    score += {
-        "Accidente vehicular": 12,
-        "Ahogamiento": 15,
-        "Incendio": 13,
-        "Caída": 10,
-        "Desaparición": 18,
-        "Causa desconocida": 20,
-    }.get(escenario, 5)
-
-    if datos["ultimo_estado"] == "Muy asustado/a":
-        score += 15
-    elif datos["ultimo_estado"] == "Inquieto/a":
-        score += 8
-
-    return max(1, min(99, score + random.randint(-5, 7)))
-
-
-def generar_expediente(datos: dict) -> dict:
-    indice = calcular_indice(datos)
-
-    escenario = datos["escenario"]
-    lugar = datos["entorno"]
-    miedo = datos["miedo"]
-    objeto = datos["objeto"]
-    ultimo_estado = datos["ultimo_estado"]
-    detalle = datos["detalle"]
-    hora = datos["hora"]
-
-    frases = {
-        "Accidente vehicular": [
-            "el vehículo perdió estabilidad antes del impacto",
-            "se registraron signos compatibles con una colisión de alta energía",
-            "la trayectoria terminó de forma abrupta",
-        ],
-        "Ahogamiento": [
-            "el registro indica una inmersión prolongada",
-            "se encontraron indicios compatibles con permanencia bajo el agua",
-            "la última ubicación conocida se encontraba próxima a una zona acuática",
-        ],
-        "Incendio": [
-            "el entorno presentó evidencia de exposición intensa al fuego",
-            "el lugar registró daños compatibles con un incendio",
-            "la concentración de humo habría reducido considerablemente la visibilidad",
-        ],
-        "Caída": [
-            "la posición final es compatible con una caída desde altura",
-            "el punto de impacto coincide con una trayectoria descendente",
-            "el entorno presenta características compatibles con una caída accidental",
-        ],
-        "Desaparición": [
-            "no existe una secuencia completa de los últimos acontecimientos",
-            "la información disponible presenta un intervalo sin explicación",
-            "la última ubicación confirmada no permite establecer una salida clara",
-        ],
-        "Causa desconocida": [
-            "la causa no puede establecerse con absoluta precisión",
-            "el expediente presenta información insuficiente para determinar una causa única",
-            "algunos elementos del registro permanecen sin explicación",
-        ],
-    }
-
-    frase = random.choice(frases.get(escenario, frases["Causa desconocida"]))
-
-    if miedo == "El mar":
-        detalle_miedo = "La referencia al mar aparece asociada con una respuesta de temor especialmente marcada."
-    elif miedo == "Un volcán":
-        detalle_miedo = "La actividad volcánica aparece registrada como uno de los temores principales."
-    elif miedo == "Terremotos":
-        detalle_miedo = "El expediente registra una preocupación recurrente relacionada con movimientos sísmicos."
-    elif miedo == "La oscuridad":
-        detalle_miedo = "La oscuridad aparece asociada a una reacción emocional elevada."
-    elif miedo == "La muerte":
-        detalle_miedo = "El concepto de muerte aparece como uno de los temores declarados."
-    elif miedo == "Lo desconocido":
-        detalle_miedo = "El temor a lo desconocido aparece de forma consistente en las respuestas."
-    else:
-        detalle_miedo = f"El temor declarado fue: {miedo.lower()}."
-
-    causa = (
-        f"{frase}. El incidente fue registrado en {lugar.lower()}. "
-        f"La hora indicada fue aproximadamente {hora}. "
-        f"{detalle_miedo} "
-        f"Antes del desenlace, el estado descrito fue: {ultimo_estado.lower()}. "
-        f"Cuando se le preguntó qué haría si encontrara un objeto antiguo, respondió: "
-        f"“{objeto}”. "
-        f"Detalle adicional proporcionado: {detalle if detalle else 'sin información adicional'}."
-    )
-
-    return {
-        "indice": indice,
-        "causa": causa,
-        "frase": frase,
-    }
-
-
-def generar_sentencia(datos: dict, expediente: dict) -> str:
-    nombre = datos["nombre"]
-    edad = datos["edad"]
-    sexo = datos["sexo"]
-    miedo = datos["miedo"]
-    escenario = datos["escenario"]
-    entorno = datos["entorno"]
-    estado = datos["ultimo_estado"]
-    objeto = datos["objeto"]
-    hora = datos["hora"]
-
-    esposo_esposa, pronombre = sexo_texto(sexo)
-
-    aperturas = [
-        f"{nombre}... escucha con atención.",
-        f"{nombre}... el expediente ya tiene tu nombre.",
-        f"{nombre}... hay algo que aparece una y otra vez en tus respuestas.",
-        f"{nombre}... algunas respuestas dejan una huella más profunda de lo que parecen.",
-    ]
-
-    conexiones = [
-        f"Elegiste {miedo.lower()} como uno de tus mayores temores.",
-        f"Tu respuesta sobre {miedo.lower()} no pasó desapercibida.",
-        f"Entre todas tus respuestas, el temor a {miedo.lower()} quedó registrado.",
-    ]
-
-    finales = [
-        "El expediente termina aquí.",
-        "No hay más preguntas en este registro.",
-        "Lo que queda ahora pertenece al silencio.",
-        "A partir de este momento, el expediente queda cerrado.",
-    ]
-
-    sentencia = (
-        f"{random.choice(aperturas)} "
-        f"Tu edad registrada es {edad} años. "
-        f"El escenario que elegiste fue {escenario.lower()}, en {entorno.lower()}, "
-        f"aproximadamente a las {hora}. "
-        f"{random.choice(conexiones)} "
-        f"Tu último estado registrado fue {estado.lower()}. "
-        f"También dijiste que, al encontrar un objeto antiguo, {objeto.lower()}. "
-        f"El expediente encontró una relación entre tus respuestas y el desenlace registrado. "
-        f"Hay detalles que no pueden explicarse solamente con las respuestas proporcionadas. "
-        f"Y existe uno especialmente extraño: {expediente['frase'].lower()}. "
-        f"En memoria de {esposo_esposa}, tus amigos y tus seres queridos. "
-        f"{random.choice(finales)}"
-    )
-
-    return sentencia
-
-
-async def _crear_voz_edge(texto: str, salida: Path):
-    communicate = Communicate(
-        texto,
-        VOICE,
-        rate=VOICE_RATE,
-        volume=VOICE_VOLUME,
-    )
-    await communicate.save(str(salida))
-
-
-def crear_voz_base(texto: str, salida: Path) -> bool:
-    try:
-        asyncio.run(_crear_voz_edge(texto, salida))
-        return salida.exists() and salida.stat().st_size > 1000
-    except Exception:
-        return False
-
-
-def aplicar_voz_grave_reverb(entrada: Path, salida: Path) -> bool:
+def generar_voz_ultratumba(texto):
     """
-    Usa ffmpeg directamente.
-    Esto evita la dependencia de pydub/pyaudioop que causaba
-    el ModuleNotFoundError visto anteriormente.
+    Genera voz masculina grave usando edge-tts + FFmpeg.
 
-    El procesamiento:
-      1. baja ligeramente el tono
-      2. mantiene la duración aproximadamente estable
-      3. añade una reverberación corta y discreta
-      4. no crea loop
+    Requisitos de Streamlit Community Cloud:
+      requirements.txt:
+          streamlit
+          reportlab
+          edge-tts
+
+      packages.txt:
+          ffmpeg
     """
-    # Factor aproximado para -2.5 semitonos.
-    factor = 2 ** (PITCH_SEMITONES / 12)
 
-    # Aecho:
-    # in_gain, out_gain, delays, decays
-    filtro = (
-        f"asetrate=44100*{factor:.6f},"
-        f"aresample=44100,"
-        f"atempo={1/factor:.6f},"
-        f"aecho=0.95:0.85:{REVERB_DELAY_MS}:{REVERB_DECAY}"
-    )
+    edge_tts_bin = shutil.which("edge-tts")
+    ffmpeg_bin = shutil.which("ffmpeg")
 
-    comando = [
-        "ffmpeg",
-        "-y",
-        "-i",
-        str(entrada),
-        "-vn",
-        "-af",
-        filtro,
-        "-codec:a",
-        "libmp3lame",
-        "-b:a",
-        "128k",
-        str(salida),
-    ]
+    if not edge_tts_bin:
+        return None, (
+            "No se encontró 'edge-tts' en el servidor. "
+            "Agrega edge-tts a requirements.txt y vuelve a desplegar."
+        )
+
+    if not ffmpeg_bin:
+        return None, (
+            "No se encontró FFmpeg en el servidor. "
+            "Agrega 'ffmpeg' a packages.txt y vuelve a desplegar."
+        )
+
+    carpeta = tempfile.mkdtemp(prefix="oraculo_tts_")
+    mp3_path = os.path.join(carpeta, "voz_original.mp3")
+    wav_path = os.path.join(carpeta, "voz_ultratumba.wav")
 
     try:
-        resultado = subprocess.run(
-            comando,
+        # edge-tts CLI es más estable en Streamlit Cloud que manejar
+        # manualmente event loops dentro de la ejecución de Streamlit.
+        comando_tts = [
+            edge_tts_bin,
+            "--voice", "es-MX-JorgeNeural",
+            "--rate=-18%",
+            "--volume=-4%",
+            "--pitch=-5Hz",
+            "--text", texto,
+            "--write-media", mp3_path,
+        ]
+
+        tts_resultado = subprocess.run(
+            comando_tts,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
             timeout=120,
         )
-        return resultado.returncode == 0 and salida.exists() and salida.stat().st_size > 1000
-    except Exception:
-        return False
 
+        if tts_resultado.returncode != 0:
+            detalle = (tts_resultado.stderr or tts_resultado.stdout or "").strip()
+            return None, (
+                "edge-tts no pudo generar la voz.\n"
+                + (detalle[:1200] if detalle else "Sin mensaje del proveedor TTS.")
+            )
 
-def generar_audio_sentencia(texto: str) -> Path | None:
-    identificador = uuid.uuid4().hex
+        if not os.path.isfile(mp3_path) or os.path.getsize(mp3_path) < 1000:
+            return None, "edge-tts terminó, pero no generó un archivo MP3 válido."
 
-    base = TEMP_DIR / f"voz_base_{identificador}.mp3"
-    final = TEMP_DIR / f"sentencia_{identificador}.mp3"
-
-    if not crear_voz_base(texto, base):
-        return None
-
-    # Si ffmpeg existe, procesamos la voz.
-    procesada = aplicar_voz_grave_reverb(base, final)
-
-    if procesada:
-        try:
-            base.unlink(missing_ok=True)
-        except Exception:
-            pass
-        return final
-
-    # Fallback: si ffmpeg no está disponible, entregamos la voz base.
-    # Así la página sigue teniendo audio y no se queda en blanco.
-    return base
-
-
-def registrar_visita() -> int:
-    """
-    Contador sencillo y persistente mientras el archivo de la app
-    permanezca en el mismo almacenamiento.
-    Se incrementa una sola vez por sesión del navegador.
-    """
-    if st.session_state.get("visita_contada", False):
-        return int(st.session_state.get("visitas", 0))
-
-    visitas = 0
-
-    try:
-        if VISITS_FILE.exists():
-            data = json.loads(VISITS_FILE.read_text(encoding="utf-8"))
-            visitas = int(data.get("visitas", 0))
-    except Exception:
-        visitas = 0
-
-    visitas += 1
-
-    try:
-        VISITS_FILE.write_text(
-            json.dumps({"visitas": visitas}, ensure_ascii=False, indent=2),
-            encoding="utf-8",
+        # Voz más grave + cuerpo + reverberación suave.
+        filtro = (
+            "asetrate=44100*0.82,"
+            "aresample=44100,"
+            "atempo=1.219512,"
+            "lowpass=f=520,"
+            "aecho=0.80:0.72:50|100|160|240:0.18|0.13|0.09|0.06,"
+            "alimiter=limit=0.88"
         )
-    except Exception:
-        # Si el entorno no permite escribir, seguimos mostrando
-        # al menos el contador de esta sesión.
-        pass
 
-    st.session_state.visita_contada = True
-    st.session_state.visitas = visitas
-    return visitas
+        comando_ffmpeg = [
+            ffmpeg_bin,
+            "-y",
+            "-loglevel", "error",
+            "-i", mp3_path,
+            "-af", filtro,
+            "-ac", "1",
+            "-ar", "44100",
+            "-c:a", "pcm_s16le",
+            wav_path,
+        ]
+
+        ff_resultado = subprocess.run(
+            comando_ffmpeg,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=120,
+        )
+
+        if ff_resultado.returncode != 0:
+            detalle = (ff_resultado.stderr or "").strip()
+            return None, (
+                "FFmpeg no pudo procesar la voz.\n"
+                + (detalle[:1200] if detalle else "Sin mensaje de FFmpeg.")
+            )
+
+        if not os.path.isfile(wav_path) or os.path.getsize(wav_path) < 1000:
+            return None, "FFmpeg terminó, pero no generó un WAV válido."
+
+        with open(wav_path, "rb") as archivo:
+            audio = archivo.read()
+
+        return audio, None
+
+    except subprocess.TimeoutExpired:
+        return None, "La generación de voz tardó demasiado y fue cancelada."
+    except Exception as exc:
+        return None, f"Error inesperado al generar la voz: {type(exc).__name__}: {exc}"
+
+    finally:
+        shutil.rmtree(carpeta, ignore_errors=True)
 
 
-def mostrar_hud_inferior():
-    """HUD inferior con contador, apoyo y firma del creador."""
-    visitas = registrar_visita()
-
-    st.markdown(
-        f"""
-        <div class="footer-hud">
-            <div class="footer-item">
-                👁️ <span>EXPEDIENTES VISITANTES</span>
-                <strong>{visitas:,}</strong>
-            </div>
-            <div class="footer-item">
-                ☠️ <span>REGISTRO</span>
-                <strong>ULTRATUMBA</strong>
-            </div>
-            <div class="footer-item">
-                <span>CREATED BY</span>
-                <strong>ALEX A.</strong>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    st.markdown(
-        '<div class="support-title">🕯️ AYUDA A MANTENER ABIERTA ESTA PUERTA</div>',
-        unsafe_allow_html=True,
-    )
-
-    st.link_button(
-        "💜 APOYAR PROYECTO",
-        PAYPAL_URL,
-        use_container_width=True,
-    )
-
-
-def iniciar_ambiente():
-    """
-    El navegador bloquea el autoplay de audio en muchas circunstancias.
-    Por eso el ambiente se inicia mediante el botón "INICIAR EL RITUAL".
-    Se utiliza HTML/JS con reproducción después de una interacción
-    directa del usuario.
-    """
-    if not HELL_FILE.exists():
+# ============================================================
+# AUDIO AMBIENTAL PERSISTENTE
+# ============================================================
+def instalar_ambiente():
+    try:
+        with open("hell.mp3", "rb") as f:
+            b64 = base64.b64encode(f.read()).decode()
+    except FileNotFoundError:
         return
 
-    try:
-        import base64
+    st.components.v1.html(f"""
+    <script>
+    (() => {{
+        const SRC = "data:audio/mpeg;base64,{b64}";
+        const PARENT = window.parent.document;
+        let audio = PARENT.getElementById("oraculo-ambiente-persistente");
 
-        audio_bytes = HELL_FILE.read_bytes()
-        encoded = base64.b64encode(audio_bytes).decode("utf-8")
+        if (!audio) {{
+            audio = PARENT.createElement("audio");
+            audio.id = "oraculo-ambiente-persistente";
+            audio.src = SRC;
+            audio.loop = true;
+            audio.preload = "auto";
+            audio.volume = 0.42;
+            audio.style.display = "none";
+            PARENT.body.appendChild(audio);
+        }} else if (!audio.src.startsWith("data:audio")) {{
+            audio.src = SRC;
+        }}
 
-        st.components.v1.html(
-            f"""
-            <audio id="hellAmbient" autoplay loop>
-                <source src="data:audio/mpeg;base64,{encoded}" type="audio/mpeg">
-            </audio>
+        window.__oraculoAudio = audio;
 
-            <script>
-            const audio = document.getElementById("hellAmbient");
-            audio.volume = 0.22;
-            audio.play().catch(() => {{}});
-            </script>
-            """,
-            height=1,
-        )
-    except Exception:
-        pass
+        function iniciar() {{
+            audio.loop = true;
+            audio.volume = 0.42;
+            const p = audio.play();
+            if (p && p.catch) p.catch(() => {{}});
+        }}
 
+        if (!window.__oraculoClickHook) {{
+            window.__oraculoClickHook = true;
+            PARENT.addEventListener("click", (ev) => {{
+                const el = ev.target && ev.target.closest
+                    ? ev.target.closest("button") : null;
+                if (!el) return;
 
-def crear_acta_pdf(datos: dict, expediente: dict) -> bytes:
-    nombre = limpiar_nombre(datos["nombre"])
+                const txt = (el.innerText || "").toUpperCase();
 
-    archivo = TEMP_DIR / f"acta_{uuid.uuid4().hex}.pdf"
+                if (txt.includes("INICIAR EL RITUAL")) {{
+                    iniciar();
+                }}
+            }}, true);
+        }}
 
-    # Intentar una fuente Unicode de Windows.
-    fuente_normal = "Helvetica"
-    fuente_negrita = "Helvetica-Bold"
-
-    posibles_fuentes = [
-        ("C:/Windows/Fonts/arial.ttf", "Arial"),
-        ("C:/Windows/Fonts/arialbd.ttf", "Arial-Bold"),
-    ]
-
-    try:
-        normal_path = Path(posibles_fuentes[0][0])
-        bold_path = Path(posibles_fuentes[1][0])
-
-        if normal_path.exists() and bold_path.exists():
-            pdfmetrics.registerFont(TTFont("ArialCustom", str(normal_path)))
-            pdfmetrics.registerFont(TTFont("ArialCustomBold", str(bold_path)))
-            fuente_normal = "ArialCustom"
-            fuente_negrita = "ArialCustomBold"
-    except Exception:
-        pass
-
-    doc = SimpleDocTemplate(
-        str(archivo),
-        pagesize=LETTER,
-        rightMargin=1.7 * cm,
-        leftMargin=1.7 * cm,
-        topMargin=1.7 * cm,
-        bottomMargin=1.7 * cm,
-    )
-
-    estilos = getSampleStyleSheet()
-
-    titulo = ParagraphStyle(
-        "Titulo",
-        parent=estilos["Title"],
-        fontName=fuente_negrita,
-        fontSize=18,
-        leading=24,
-        alignment=TA_CENTER,
-        spaceAfter=18,
-    )
-
-    normal = ParagraphStyle(
-        "NormalCustom",
-        parent=estilos["BodyText"],
-        fontName=fuente_normal,
-        fontSize=9.5,
-        leading=14,
-        spaceAfter=8,
-    )
-
-    subtitulo = ParagraphStyle(
-        "Subtitulo",
-        parent=estilos["Heading2"],
-        fontName=fuente_negrita,
-        fontSize=11,
-        leading=15,
-        spaceBefore=10,
-        spaceAfter=7,
-    )
-
-    story = []
-
-    story.append(Paragraph("ACTA DE DEFUNCIÓN", titulo))
-    story.append(
-        Paragraph(
-            "REGISTRO DEL EXPEDIENTE DE ULTRATUMBA",
-            ParagraphStyle(
-                "Mini",
-                parent=normal,
-                alignment=TA_CENTER,
-                fontName=fuente_negrita,
-            ),
-        )
-    )
-    story.append(Spacer(1, 15))
-
-    expediente_id = f"DEF-{random.randint(10000,99999)}-{date.today().year}"
-
-    tabla = [
-        ["EXPEDIENTE", expediente_id],
-        ["NOMBRE", html.escape(nombre)],
-        ["SEXO", html.escape(datos["sexo"])],
-        ["EDAD", f"{datos['edad']} años"],
-        ["ESCENARIO", html.escape(datos["escenario"])],
-        ["ENTORNO", html.escape(datos["entorno"])],
-        ["HORA REGISTRADA", html.escape(datos["hora"])],
-        ["ÍNDICE NARRATIVO", f"{expediente['indice']} / 100"],
-        ["FECHA DEL REGISTRO", date.today().strftime("%d/%m/%Y")],
-    ]
-
-    t = Table(tabla, colWidths=[5 * cm, 11 * cm])
-    t.setStyle(
-        TableStyle(
-            [
-                ("FONTNAME", (0, 0), (-1, -1), fuente_normal),
-                ("FONTNAME", (0, 0), (0, -1), fuente_negrita),
-                ("FONTSIZE", (0, 0), (-1, -1), 8.5),
-                ("GRID", (0, 0), (-1, -1), 0.4, colors.grey),
-                ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 7),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 7),
-                ("TOPPADDING", (0, 0), (-1, -1), 6),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-            ]
-        )
-    )
-
-    story.append(t)
-    story.append(Spacer(1, 15))
-
-    story.append(Paragraph("CAUSA DE MUERTE", subtitulo))
-    story.append(Paragraph(html.escape(expediente["causa"]), normal))
-
-    story.append(Paragraph("DATOS COMPLEMENTARIOS", subtitulo))
-    story.append(
-        Paragraph(
-            f"Temor declarado: {html.escape(datos['miedo'])}. "
-            f"Estado previo: {html.escape(datos['ultimo_estado'])}. "
-            f"Respuesta ante objeto antiguo: {html.escape(datos['objeto'])}.",
-            normal,
-        )
-    )
-
-    story.append(Paragraph("DETALLE ADICIONAL", subtitulo))
-    story.append(
-        Paragraph(
-            html.escape(datos["detalle"] or "No se proporcionó información adicional."),
-            normal,
-        )
-    )
-
-    story.append(Spacer(1, 18))
-
-    esposo_esposa, _ = sexo_texto(datos["sexo"])
-
-    story.append(
-        Paragraph(
-            f"En memoria de {esposo_esposa}, tus amigos y seres queridos.",
-            ParagraphStyle(
-                "Dedicatoria",
-                parent=normal,
-                alignment=TA_CENTER,
-                fontName=fuente_normal,
-                fontSize=10,
-                leading=15,
-            ),
-        )
-    )
-
-    story.append(Spacer(1, 25))
-
-    story.append(
-        Paragraph(
-            "DOCUMENTO GENERADO POR EL REGISTRO NARRATIVO.",
-            ParagraphStyle(
-                "Final",
-                parent=normal,
-                alignment=TA_CENTER,
-                fontName=fuente_normal,
-                fontSize=7,
-            ),
-        )
-    )
-
-    doc.build(story)
-
-    return archivo.read_bytes()
-
-
-def renderizar_ambiente_y_control():
-    """
-    Se mantiene separado para evitar que reproducir la voz
-    reinicie los datos del formulario.
-    """
-    if st.session_state.get("ritual_iniciado", False):
-        iniciar_ambiente()
+        const flag = PARENT.documentElement.dataset.oraculoIniciado === "1";
+        if (flag) iniciar();
+    }})();
+    </script>
+    """, height=0)
 
 
 # ============================================================
-# ESTADO DE LA APLICACIÓN
+# ENCABEZADO
 # ============================================================
-
-defaults = {
-    "ritual_iniciado": False,
-    "expediente": None,
-    "sentencia": None,
-    "audio_bytes": None,
-    "audio_filename": None,
-    "acta_bytes": None,
-    "acta_filename": None,
-    "visita_contada": False,
-    "visitas": 0,
-}
-
-for key, value in defaults.items():
-    if key not in st.session_state:
-        st.session_state[key] = value
+st.markdown("<h1>⛧ HASTA AQUÍ LLEGASTE ⛧</h1>", unsafe_allow_html=True)
+instalar_ambiente()
 
 
 # ============================================================
-# CABECERA
+# PANTALLA INICIAL
 # ============================================================
-
-st.markdown(
-    '<div class="ritual-title">☠ SENTENCIA DE VOZ DE ULTRATUMBA</div>',
-    unsafe_allow_html=True,
-)
-
-st.markdown(
-    '<div class="subtitle">EL EXPEDIENTE ESPERA TUS RESPUESTAS</div>',
-    unsafe_allow_html=True,
-)
-
-
-# ============================================================
-# BOTÓN INICIAR RITUAL
-# ============================================================
-
 if not st.session_state.ritual_iniciado:
-    if st.button("🕯️  INICIAR EL RITUAL OMINOSO", use_container_width=True):
+    st.markdown(
+        "<p style='text-align:center;color:#8a2be2;font-size:16px;font-weight:bold;'>"
+        "EL ALTAR ESTÁ APAGADO</p>",
+        unsafe_allow_html=True
+    )
+    st.markdown(
+        "<p style='text-align:center;color:#666;'>"
+        "La presencia de ultratumba aguarda. Cuando cruces el umbral, no cierres los ojos.</p>",
+        unsafe_allow_html=True
+    )
+
+    st.markdown('<div class="contenedor-centrado">', unsafe_allow_html=True)
+
+    if st.button("👁️ INICIAR EL RITUAL OMINOSO", use_container_width=False):
         st.session_state.ritual_iniciado = True
+        st.session_state.resultado_generado = False
+        st.session_state.resultado = None
+        st.session_state.audio_generado = None
+        st.session_state.audio_error = None
+        st.session_state.pdf_generado = None
+
+        st.components.v1.html("""
+        <script>
+        try {
+            window.parent.document.documentElement.dataset.oraculoIniciado='1';
+            const a=window.parent.document.getElementById(
+                'oraculo-ambiente-persistente'
+            );
+            if(a){
+                a.loop=true;
+                a.volume=.42;
+                const p=a.play();
+                if(p&&p.catch)p.catch(()=>{});
+            }
+        } catch(e) {}
+        </script>
+        """, height=0)
+
         st.rerun()
-else:
-    renderizar_ambiente_y_control()
+
+    st.markdown("</div>", unsafe_allow_html=True)
+    st.stop()
+
+
+st.components.v1.html("""
+<script>
+try {
+    window.parent.document.documentElement.dataset.oraculoIniciado='1';
+    const a=window.parent.document.getElementById(
+        'oraculo-ambiente-persistente'
+    );
+    if(a){
+        a.loop=true;
+        if(a.paused){
+            const p=a.play();
+            if(p&&p.catch)p.catch(()=>{});
+        }
+    }
+} catch(e) {}
+</script>
+""", height=0)
+
+st.markdown(
+    "<p style='text-align:center;color:#4e4e6a !important;font-style:italic;'>"
+    "El velo se ha roto. Algo ha escuchado tu nombre.</p>",
+    unsafe_allow_html=True
+)
+st.write("---")
 
 
 # ============================================================
-# FORMULARIO
+# CUESTIONARIO
 # ============================================================
-
-st.markdown("## Registro del expediente")
-
-with st.form("expediente_form", clear_on_submit=False):
+with st.form("ritual_mortal_completo"):
+    st.markdown("### 👁️ Bloque I: Datos de Amarra Corporal")
 
     nombre = st.text_input(
-        "Nombre completo",
-        placeholder="Escribe el nombre del expediente",
+        "Tu nombre completo y apellidos verdaderos:",
+        max_chars=120,
+        key="campo_nombre"
+    )
+    sexo = st.radio(
+        "Sexo:",
+        ["Masculino", "Femenino"],
+        horizontal=True,
+        key="campo_sexo"
+    )
+    fecha_nacimiento = st.date_input(
+        "Fecha de nacimiento:",
+        min_value=datetime(1910, 1, 1),
+        max_value=datetime.today(),
+        value=datetime(2000, 1, 1),
+        key="campo_fecha"
+    )
+    estado_civil = st.radio(
+        "Estado civil:",
+        ["Soltero/a", "Casado/a", "Divorciado/a", "Viudo/a / Separado/a"],
+        key="campo_estado"
+    )
+    personas_dependientes = st.selectbox(
+        "¿Cuántas personas dependen directamente de ti?",
+        ["Ninguna", "1", "2", "3", "4 o más"],
+        key="campo_dependientes"
     )
 
-    c1, c2 = st.columns(2)
+    st.write("---")
+    st.markdown("### 🏢 Bloque II: Exposición Física y Tránsito")
 
-    with c1:
-        sexo = st.selectbox(
-            "Sexo",
-            ["Masculino", "Femenino"],
-        )
-
-    with c2:
-        edad = st.number_input(
-            "Edad",
-            min_value=1,
-            max_value=120,
-            value=26,
-            step=1,
-        )
-
-    escenario = st.selectbox(
-        "Escenario del fallecimiento",
+    ocupacion = st.selectbox(
+        "¿A qué dedicas tu energía durante el día?",
         [
-            "Accidente vehicular",
-            "Ahogamiento",
-            "Incendio",
-            "Caída",
-            "Desaparición",
-            "Causa desconocida",
+            "Construcción / Trabajo Operativo / Alturas",
+            "Conductor / Repartidor / Tránsito continuo",
+            "Oficina / Desarrollo / Trabajo Digital",
+            "Comercio / Servicios / Multitudes",
+            "Estudiante / Trabajo principalmente en casa",
+            "Trabajo nocturno / Turnos variables"
         ],
+        key="campo_ocupacion"
     )
-
-    entorno = st.selectbox(
-        "¿Dónde ocurrió?",
+    piso = st.slider(
+        "¿En qué nivel o piso permaneces más tiempo?",
+        1, 60, 1, key="campo_piso"
+    )
+    transporte_principal = st.selectbox(
+        "¿En qué te desplazas regularmente?",
         [
-            "Una carretera de circulación rápida",
-            "Una casa abandonada",
-            "Un bosque",
-            "Una zona cercana al mar",
-            "Una zona montañosa",
-            "Un edificio antiguo",
-            "Un lugar desconocido",
-            "Un camino aislado",
+            "Automóvil",
+            "Motocicleta / Bicicleta",
+            "Metro / Tren",
+            "Metrobús / Autobús",
+            "Camión urbano / Microbús / Combi",
+            "Cablebús / Teleférico",
+            "Avión",
+            "Principalmente a pie"
         ],
+        key="campo_transporte"
     )
-
-    hora = st.time_input(
-        "Hora aproximada del incidente",
-        value=datetime.strptime("03:17", "%H:%M").time(),
-    )
-
-    st.markdown("### Preguntas complementarias")
-
-    miedo = st.selectbox(
-        "¿A qué le tienes más miedo?",
+    tiempo_desplazamiento = st.selectbox(
+        "¿Cuánto tiempo pasas desplazándote al día?",
         [
-            "La oscuridad",
-            "El mar",
+            "Menos de 30 minutos",
+            "30 minutos a 1 hora",
+            "1 a 2 horas",
+            "2 a 4 horas",
+            "Más de 4 horas"
+        ],
+        key="campo_tiempo"
+    )
+    horario_mayor_riesgo = st.selectbox(
+        "¿En qué horario realizas la mayor parte de tus trayectos?",
+        ["Mañana", "Mediodía", "Tarde", "Noche", "Madrugada"],
+        key="campo_horario"
+    )
+    entorno_urbano = st.radio(
+        "¿Qué tan hostil es el entorno habitual de tus trayectos?",
+        ["Bajo", "Moderado", "Alto", "Crítico"],
+        key="campo_entorno"
+    )
+    sismos_zona = st.radio(
+        "¿La zona donde vives o trabajas presenta actividad sísmica?",
+        ["No", "Sí, ocasional", "Sí, frecuente"],
+        key="campo_sismos"
+    )
+    clima_exposicion = st.selectbox(
+        "¿A qué condiciones ambientales estás más expuesto?",
+        [
+            "Clima estable",
+            "Lluvia frecuente",
+            "Calor intenso",
+            "Frío intenso",
+            "Tormentas eléctricas",
+            "Cambios extremos"
+        ],
+        key="campo_clima"
+    )
+
+    st.write("---")
+    st.markdown("### 🕯️ Bloque III: Hábitos y Umbral del Riesgo")
+
+    actividad_fisica = st.selectbox(
+        "¿Cuál describe mejor tu actividad física?",
+        ["Frecuente", "Moderada", "Poca", "Casi ninguna"],
+        key="campo_actividad"
+    )
+    deportes_extremos = st.radio(
+        "¿Realizas actividades de alta adrenalina o riesgo físico?",
+        ["Nunca", "Pocas veces", "Frecuentemente", "Constantemente"],
+        key="campo_extremos"
+    )
+    sueño = st.selectbox(
+        "¿Cuántas horas duermes normalmente?",
+        ["Menos de 4", "4 a 5", "5 a 6", "6 a 7", "7 a 8", "Más de 8"],
+        key="campo_sueno"
+    )
+    fatiga = st.select_slider(
+        "Nivel habitual de fatiga:",
+        options=["Mínimo", "Estrés común", "Alto", "Agotamiento extremo"],
+        key="campo_fatiga"
+    )
+    tabaco = st.radio(
+        "¿Consumes tabaco o vapores?",
+        ["No", "Ocasionalmente", "Diariamente"],
+        key="campo_tabaco"
+    )
+    alcohol = st.radio(
+        "Consumo de alcohol:",
+        ["Nulo", "Moderado", "Frecuente"],
+        key="campo_alcohol"
+    )
+    sustancias = st.radio(
+        "¿Consumes alguna sustancia ilegal?",
+        ["No", "Ocasional", "Regular"],
+        key="campo_sustancias"
+    )
+
+    st.write("---")
+    st.markdown("### 🔮 Bloque IV: El Entorno")
+
+    vivienda = st.selectbox(
+        "¿Dónde pasas la mayor parte de tus noches?",
+        [
+            "Casa independiente",
+            "Departamento",
+            "Casa compartida",
+            "Lugar aislado",
+            "Hotel / alojamiento temporal",
+            "Otro"
+        ],
+        key="campo_vivienda"
+    )
+    escaleras = st.radio(
+        "¿Tu rutina incluye escaleras, azoteas o desniveles?",
+        ["Casi nunca", "A veces", "Frecuentemente"],
+        key="campo_escaleras"
+    )
+    agua = st.radio(
+        "¿Pasas tiempo cerca de cuerpos de agua?",
+        ["No", "A veces", "Frecuentemente"],
+        key="campo_agua"
+    )
+    maquinaria = st.radio(
+        "¿Trabajas cerca de maquinaria, herramientas o instalaciones eléctricas?",
+        ["No", "A veces", "Frecuentemente"],
+        key="campo_maquinaria"
+    )
+    conducir_cansado = st.radio(
+        "¿Has conducido estando muy cansado/a?",
+        ["Nunca", "Alguna vez", "Frecuentemente"],
+        key="campo_cansado"
+    )
+    objetos_riesgo = st.radio(
+        "¿Tienes en casa objetos o instalaciones potencialmente peligrosos?",
+        ["No", "Algunos", "Varios"],
+        key="campo_objetos"
+    )
+    visibilidad = st.selectbox(
+        "¿Cómo suele ser la visibilidad en tus trayectos?",
+        ["Buena", "Variable", "Mala", "Muy mala"],
+        key="campo_visibilidad"
+    )
+    atencion = st.select_slider(
+        "¿Qué tan atento sueles estar cuando estás bajo presión?",
+        options=["Muy atento", "Atento", "Distraído", "Agotado"],
+        key="campo_atencion"
+    )
+    lugar_frecuente = st.selectbox(
+        "¿Cuál de estos lugares forma parte de tu rutina?",
+        [
+            "Carretera",
+            "Edificio alto",
+            "Obra",
+            "Taller",
+            "Oficina",
+            "Centro comercial",
+            "Estación de transporte",
+            "Casa"
+        ],
+        key="campo_lugar"
+    )
+
+    st.write("---")
+    st.markdown("### 📿 Bloque V: Inclinaciones Ocultas")
+
+    creencias = st.selectbox(
+        "¿Qué lugar ocupa lo sobrenatural en tu vida?",
+        [
+            "Ninguno",
+            "Curiosidad",
+            "Creo en energías / fenómenos",
+            "Creo firmemente en lo sobrenatural"
+        ],
+        key="campo_creencias"
+    )
+    aficion_terror = st.radio(
+        "¿Consumes historias de ultratumba, casas embrujadas o terror psicológico?",
+        ["Me aterra", "Consumo ocasional", "Me fascina"],
+        key="campo_terror"
+    )
+    reliquias = st.radio(
+        "¿Posees algún objeto antiguo, heredado o extraño?",
+        ["No", "Sí, uno", "Sí, varios"],
+        key="campo_reliquias"
+    )
+    lugar_temido = st.selectbox(
+        "¿Qué escenario te produce mayor incomodidad?",
+        [
+            "Ninguno en particular",
+            "El mar / agua profunda",
             "Un volcán",
-            "Terremotos",
+            "Un terremoto",
+            "Una carretera vacía",
+            "Una caída desde altura",
+            "Un incendio",
+            "Una tormenta eléctrica",
+            "Un edificio abandonado",
+            "Un ascensor / espacio cerrado",
+            "Un bosque de noche",
+            "La oscuridad total",
+            "Estar completamente solo",
+            "Una multitud",
+            "Un accidente aéreo",
+            "Un accidente automovilístico",
+            "Animales agresivos",
+            "No poder pedir ayuda"
+        ],
+        key="campo_temor"
+    )
+    segundo_temor = st.selectbox(
+        "¿Y cuál de estos peligros te inquieta en segundo lugar?",
+        [
+            "Ninguno",
+            "Agua profunda",
+            "Fuego",
             "Alturas",
-            "La muerte",
-            "Estar solo/a",
-            "Lo desconocido",
-            "Animales",
+            "Terremotos",
+            "Volcanes",
+            "Tormentas",
+            "Accidentes",
             "Espacios cerrados",
-            "Otro",
+            "Soledad",
+            "Oscuridad",
+            "Perder el control",
+            "Quedar atrapado"
         ],
+        key="campo_segundo_temor"
     )
 
-    if miedo == "Otro":
-        miedo_otro = st.text_input("Especifica tu miedo")
-        miedo_final = miedo_otro.strip() or "Un miedo no especificado"
-    else:
-        miedo_final = miedo
-
-    ultimo_estado = st.selectbox(
-        "¿Cómo crees que estarías justo antes de morir?",
-        [
-            "Tranquilo/a",
-            "Inquieto/a",
-            "Muy asustado/a",
-            "Confundido/a",
-            "Enojado/a",
-            "Intentando escapar",
-            "No lo sé",
-        ],
+    enviar = st.form_submit_button(
+        "REVELAR SENTENCIA DE ULTRATUMBA 👁️",
+        use_container_width=True
     )
 
-    objeto = st.selectbox(
-        "Si encontraras un objeto antiguo, ¿qué harías?",
-        [
-            "Lo ignoraría",
-            "Lo recogería",
-            "Lo investigaría",
-            "Se lo mostraría a alguien",
-            "Me lo llevaría a casa",
-        ],
-    )
 
-    lugar_muerte = st.selectbox(
-        "¿Dónde preferirías NO morir?",
-        [
-            "En el mar",
-            "En un bosque",
-            "En una carretera",
-            "En un hospital",
-            "En una casa abandonada",
-            "En un edificio alto",
-            "En un lugar desconocido",
-        ],
-    )
-
-    sonido = st.selectbox(
-        "Si escuchas una voz llamándote desde otra habitación, ¿qué harías?",
-        [
-            "Iría a investigar",
-            "Preguntaría quién es",
-            "No iría",
-            "Saldría del lugar",
-            "Esperaría en silencio",
-        ],
-    )
-
-    detalle = st.text_area(
-        "¿Hay algo más que quieras dejar registrado?",
-        placeholder="Escribe cualquier detalle...",
-        height=110,
-    )
-
-    generar = st.form_submit_button(
-        "☠️  CERRAR EL EXPEDIENTE Y REVELAR LA SENTENCIA",
-        use_container_width=True,
-    )
+st.button(
+    "🕯️ LIMPIAR CAMPOS Y CERRAR EL EXPEDIENTE",
+    on_click=limpiar_todo,
+    use_container_width=True
+)
 
 
 # ============================================================
-# PROCESAMIENTO
+# GENERAR RESULTADO
 # ============================================================
-
-if generar:
-
+if enviar:
     if not nombre.strip():
-        st.error("Es necesario introducir un nombre para crear el expediente.")
-        st.stop()
+        st.error("La presencia de ultratumba necesita un nombre para abrir el expediente.")
+    else:
+        nombre_str = nombre.strip().upper()
 
-    datos = {
-        "nombre": nombre.strip(),
-        "sexo": sexo,
-        "edad": int(edad),
-        "escenario": escenario,
-        "entorno": entorno,
-        "hora": hora.strftime("%H:%M"),
-        "miedo": miedo_final,
-        "ultimo_estado": ultimo_estado,
-        "objeto": objeto,
-        "lugar_muerte": lugar_muerte,
-        "sonido": sonido,
-        "detalle": detalle.strip(),
-    }
-
-    # --------------------------------------------------------
-    # REVELACIÓN CON ESTADO VISIBLE
-    # --------------------------------------------------------
-    # El usuario ve inmediatamente que el botón sí funcionó.
-    # El proceso permanece visible mientras se genera el audio
-    # y el acta.
-    with st.status("☠️ REVELANDO EL EXPEDIENTE...", expanded=True) as estado:
-
-        st.write("🕯️ Abriendo el registro de ultratumba...")
-        expediente = generar_expediente(datos)
-
-        st.write("📜 Inscribiendo los datos en la lápida...")
-        sentencia = generar_sentencia(datos, expediente)
-
-        st.write("🎙️ La voz de ultratumba está tomando forma...")
-        audio_path = generar_audio_sentencia(sentencia)
-
-        st.write("⚖️ Sellando el acta de defunción...")
-        acta_bytes = crear_acta_pdf(datos, expediente)
-
-        st.write("🩸 Preparando la revelación final...")
-
-        # Guardar TODO en session_state.
-        # Así los botones posteriores NO vuelven a ejecutar el formulario.
-        st.session_state.expediente = expediente
-        st.session_state.sentencia = sentencia
-        st.session_state.acta_bytes = acta_bytes
-
-        nombre_archivo = limpiar_nombre(datos["nombre"])
-
-        st.session_state.acta_filename = f"Acta_de_defuncion_{nombre_archivo}.pdf"
-
-        if audio_path:
-            st.session_state.audio_bytes = audio_path.read_bytes()
-            st.session_state.audio_filename = f"Sentencia_{nombre_archivo}.mp3"
-        else:
-            st.session_state.audio_bytes = None
-            st.session_state.audio_filename = None
-
-        estado.update(
-            label="☠️ EXPEDIENTE REVELADO",
-            state="complete",
-            expanded=False,
-        )
-
-    st.rerun()
+        # Mientras se generan la lápida, el audio y el expediente,
+        # mostramos un estado visible para que el usuario sepa que el proceso sigue activo.
+        with st.spinner("☠️ EL VELO SE ESTÁ ABRIENDO... GENERANDO LÁPIDA Y SENTENCIA DE ULTRATUMBA"):
+            semilla = generar_semilla(
+                nombre_str, sexo, fecha_nacimiento, estado_civil,
+                personas_dependientes, ocupacion, piso, transporte_principal,
+                tiempo_desplazamiento, horario_mayor_riesgo, entorno_urbano,
+                sismos_zona, clima_exposicion, actividad_fisica,
+                deportes_extremos, sueño, fatiga, tabaco, alcohol, sustancias,
+                vivienda, escaleras, agua, maquinaria, conducir_cansado,
+                objetos_riesgo, visibilidad, atencion, lugar_frecuente,
+                creencias, aficion_terror, reliquias, lugar_temido,
+                segundo_temor
+            )
+    
+            rng = random.Random(semilla)
+    
+            riesgo = 8
+            riesgo += {"Bajo": 0, "Moderado": 5, "Alto": 10, "Crítico": 18}[entorno_urbano]
+            riesgo += {
+                "Menos de 30 minutos": 0,
+                "30 minutos a 1 hora": 2,
+                "1 a 2 horas": 5,
+                "2 a 4 horas": 8,
+                "Más de 4 horas": 12
+            }[tiempo_desplazamiento]
+            riesgo += {
+                "Mañana": 0,
+                "Mediodía": 1,
+                "Tarde": 3,
+                "Noche": 8,
+                "Madrugada": 10
+            }[horario_mayor_riesgo]
+            riesgo += {
+                "Buena": 0,
+                "Variable": 3,
+                "Mala": 7,
+                "Muy mala": 11
+            }[visibilidad]
+            riesgo += {
+                "Muy atento": 0,
+                "Atento": 2,
+                "Distraído": 6,
+                "Agotado": 10
+            }[atencion]
+    
+            if "Motocicleta" in transporte_principal:
+                riesgo += 15
+            elif "Automóvil" in transporte_principal:
+                riesgo += 7
+    
+            if "Sí, frecuente" in sismos_zona:
+                riesgo += 7
+            elif "Sí, ocasional" in sismos_zona:
+                riesgo += 3
+    
+            if "Tormentas" in clima_exposicion:
+                riesgo += 5
+    
+            if "Constantemente" in deportes_extremos:
+                riesgo += 15
+            elif "Frecuentemente" in deportes_extremos:
+                riesgo += 8
+    
+            riesgo += {
+                "Menos de 4": 10,
+                "4 a 5": 6,
+                "5 a 6": 3,
+                "6 a 7": 1,
+                "7 a 8": 0,
+                "Más de 8": 0
+            }[sueño]
+    
+            riesgo += {
+                "Mínimo": 0,
+                "Estrés común": 2,
+                "Alto": 5,
+                "Agotamiento extremo": 9
+            }[fatiga]
+    
+            if tabaco == "Diariamente":
+                riesgo += 5
+            if alcohol == "Frecuente":
+                riesgo += 4
+    
+            if sustancias == "Regular":
+                riesgo += 8
+            elif sustancias == "Ocasional":
+                riesgo += 3
+    
+            if conducir_cansado == "Frecuentemente":
+                riesgo += 10
+            elif conducir_cansado == "Alguna vez":
+                riesgo += 3
+    
+            if maquinaria == "Frecuentemente":
+                riesgo += 8
+            if escaleras == "Frecuentemente":
+                riesgo += 5
+            if agua == "Frecuentemente":
+                riesgo += 4
+    
+            riesgo = min(98, max(5, riesgo + rng.randint(-4, 7)))
+    
+            nivel = (
+                "UMBRAL CRÍTICO" if riesgo >= 75
+                else "SOMBRA ELEVADA" if riesgo >= 55
+                else "VIGILIA" if riesgo >= 35
+                else "BAJO EL VELO"
+            )
+    
+            edad_actual = max(
+                1,
+                (datetime.now().date() - fecha_nacimiento).days // 365
+            )
+    
+            horizonte = rng.randint(8, 46)
+    
+            if riesgo >= 75:
+                horizonte = rng.randint(4, 24)
+            elif riesgo >= 55:
+                horizonte = rng.randint(8, 30)
+            elif riesgo < 35:
+                horizonte = rng.randint(18, 46)
+    
+            fecha_muerte = datetime.now() + timedelta(
+                days=int(horizonte * 365.25) + rng.randint(-180, 180)
+            )
+    
+            edad_muerte = calcular_edad_en_fecha(
+                fecha_nacimiento,
+                fecha_muerte
+            )
+    
+            escenarios = []
+    
+            if "Motocicleta" in transporte_principal:
+                escenarios.append((
+                    "COLISIÓN EN TRAYECTO",
+                    "La superficie está húmeda y el tráfico avanza en oleadas. "
+                    "Un vehículo cambia de trayectoria demasiado tarde. "
+                    "El margen de reacción desaparece casi por completo."
+                ))
+    
+            if "Automóvil" in transporte_principal:
+                escenarios.append((
+                    "ACCIDENTE VEHICULAR",
+                    "El trayecto comienza como cualquier otro. Una maniobra "
+                    "inesperada, una distancia demasiado corta y un instante "
+                    "de indecisión convierten una ruta conocida en una escena "
+                    "que nadie esperaba."
+                ))
+    
+            if horario_mayor_riesgo in ["Noche", "Madrugada"]:
+                escenarios.append((
+                    "EL TRAYECTO SIN TESTIGOS",
+                    "La ciudad está casi vacía. La iluminación deja zonas "
+                    "enteras fuera de la vista y un ruido que al principio "
+                    "parece lejano termina formando parte de la última "
+                    "secuencia del expediente."
+                ))
+    
+            if "Frecuentemente" in maquinaria:
+                escenarios.append((
+                    "FALLA OPERATIVA",
+                    "La rutina había convertido el procedimiento en algo "
+                    "automático. Una pequeña anomalía pasa inadvertida y, "
+                    "cuando alguien comprende que el mecanismo no está "
+                    "respondiendo como debería, ya no queda suficiente margen."
+                ))
+    
+            if "Frecuentemente" in escaleras:
+                escenarios.append((
+                    "CAÍDA EN ESTRUCTURA",
+                    "Un desnivel conocido deja de serlo durante un segundo. "
+                    "La superficie, la postura y el punto de apoyo se combinan "
+                    "de una manera que transforma una acción cotidiana en "
+                    "una emergencia."
+                ))
+    
+            if "Frecuentemente" in agua:
+                escenarios.append((
+                    "EL AGUA",
+                    "La superficie parece estable hasta que una corriente "
+                    "cambia la posición del cuerpo. La distancia hacia un "
+                    "punto seguro resulta mayor de lo que parecía desde la orilla."
+                ))
+    
+            if "Sí, frecuente" in sismos_zona:
+                escenarios.append((
+                    "EL MOVIMIENTO",
+                    "Primero aparece una vibración tenue. Después, los objetos "
+                    "comienzan a responder y el espacio conocido pierde durante "
+                    "unos instantes sus referencias habituales."
+                ))
+    
+            if "Tormentas" in clima_exposicion:
+                escenarios.append((
+                    "TORMENTA ELÉCTRICA",
+                    "La visibilidad cae rápidamente. La lluvia golpea con tanta "
+                    "fuerza que oculta sonidos pequeños y el entorno se vuelve "
+                    "difícil de leer."
+                ))
+    
+            if "Constantemente" in deportes_extremos:
+                escenarios.append((
+                    "EL LÍMITE",
+                    "La experiencia había hecho que muchos riesgos parecieran "
+                    "controlables. Esta vez una falla mínima aparece justo "
+                    "cuando ya no existe suficiente espacio para corregirla."
+                ))
+    
+            if conducir_cansado == "Frecuentemente":
+                escenarios.append((
+                    "MICROSUEÑO",
+                    "Los ojos se cierran durante un instante que el cerebro "
+                    "no registra como sueño. Cuando la atención regresa, "
+                    "el escenario frente a ti ya ha cambiado."
+                ))
+    
+            if entorno_urbano == "Crítico" and horario_mayor_riesgo in ["Noche", "Madrugada"]:
+                escenarios.append((
+                    "REGRESO SIN TESTIGOS",
+                    "El trayecto habitual termina en un tramo aislado. "
+                    "La combinación de poca visibilidad, tránsito irregular "
+                    "y un entorno hostil deja muy poco margen para reaccionar."
+                ))
+    
+            if atencion in ["Distraído", "Agotado"] and sueño in ["Menos de 4", "4 a 5"]:
+                escenarios.append((
+                    "EL SEGUNDO PERDIDO",
+                    "El cuerpo llevaba horas pidiendo descanso. El error no "
+                    "aparece como una gran decisión equivocada, sino como "
+                    "una fracción de segundo en la que la atención abandona "
+                    "el entorno."
+                ))
+    
+            if lugar_frecuente == "Edificio alto" or piso >= 20:
+                escenarios.append((
+                    "ALTURA",
+                    "El expediente señala una rutina desarrollada a varios "
+                    "niveles del suelo. Un punto de apoyo inestable convierte "
+                    "un movimiento ordinario en una situación irreversible."
+                ))
+    
+            miedo_escenarios = {
+                "El mar / agua profunda": (
+                    "LA PROFUNDIDAD",
+                    "La superficie del agua parecía tranquila. Un cambio "
+                    "repentino en la corriente separó el cuerpo de la zona "
+                    "segura y la distancia hacia la orilla resultó engañosamente grande."
+                ),
+                "Un volcán": (
+                    "TIERRA EN LLAMAS",
+                    "La alerta había llegado, pero el entorno seguía "
+                    "pareciendo inmóvil. Una nube de ceniza redujo la visibilidad "
+                    "y convirtió una ruta conocida en un laberinto oscuro."
+                ),
+                "Un terremoto": (
+                    "EL SUELO CEDE",
+                    "La primera vibración fue casi imperceptible. Después, "
+                    "el edificio comenzó a responder con violencia y varios "
+                    "objetos perdieron sus puntos de apoyo al mismo tiempo."
+                ),
+                "Una carretera vacía": (
+                    "LA CARRETERA",
+                    "El tramo parecía interminable y apenas había otros vehículos. "
+                    "Un instante de mala visibilidad y una maniobra inesperada "
+                    "cambiaron el trayecto para siempre."
+                ),
+                "Una caída desde altura": (
+                    "EL BORDE",
+                    "Un punto de apoyo que parecía firme dejó de estarlo. "
+                    "El cuerpo perdió el equilibrio antes de que hubiera tiempo "
+                    "suficiente para recuperar la posición."
+                ),
+                "Un incendio": (
+                    "EL HUMO",
+                    "El fuego no fue lo primero que se volvió peligroso. "
+                    "Fue el humo, que redujo la visibilidad y desorientó "
+                    "la salida que segundos antes parecía evidente."
+                ),
+                "Una tormenta eléctrica": (
+                    "LA TORMENTA",
+                    "El cielo se cerró rápidamente. La lluvia, el viento y "
+                    "los destellos hicieron difícil distinguir qué sonidos "
+                    "pertenecían al entorno y cuáles anunciaban un peligro más cercano."
+                ),
+                "Un edificio abandonado": (
+                    "EL EDIFICIO VACÍO",
+                    "El lugar estaba inmóvil hasta que una estructura cedió "
+                    "en algún punto del interior. El sonido parecía lejano, "
+                    "pero la ruta de salida dejó de ser segura."
+                ),
+                "Un ascensor / espacio cerrado": (
+                    "SIN SALIDA",
+                    "El espacio se detuvo entre niveles. La iluminación falló "
+                    "y, durante los siguientes minutos, la sensación de encierro "
+                    "hizo que cada segundo pareciera mucho más largo."
+                ),
+                "Un bosque de noche": (
+                    "EL BOSQUE",
+                    "La oscuridad borró las referencias habituales. Un ruido "
+                    "detrás de los árboles provocó un cambio de dirección y "
+                    "esa decisión terminó alejando del camino seguro."
+                ),
+                "La oscuridad total": (
+                    "A CIEGAS",
+                    "Durante unos instantes no hubo ninguna referencia visual. "
+                    "El cuerpo avanzó confiando en la memoria del lugar, pero "
+                    "un obstáculo apareció donde no debía estar."
+                ),
+                "Estar completamente solo": (
+                    "SIN TESTIGOS",
+                    "El incidente ocurrió lejos de otras personas. Cuando "
+                    "finalmente alguien advirtió que algo había sucedido, "
+                    "el tiempo transcurrido ya había sido decisivo."
+                ),
+                "Una multitud": (
+                    "LA MULTITUD",
+                    "Un movimiento colectivo comenzó sin que fuera evidente "
+                    "su origen. En pocos segundos, el espacio personal desapareció "
+                    "y una salida aparentemente cercana quedó bloqueada."
+                ),
+                "Un accidente aéreo": (
+                    "EL VUELO",
+                    "Todo transcurría con normalidad hasta que una señal de "
+                    "emergencia interrumpió el silencio de la cabina. La tripulación "
+                    "actuó de inmediato, pero la secuencia se desarrolló demasiado rápido."
+                ),
+                "Un accidente automovilístico": (
+                    "EL IMPACTO",
+                    "Dos trayectorias se cruzaron en el momento equivocado. "
+                    "El primer sonido fue breve y seco, seguido por una sucesión "
+                    "de movimientos imposibles de detener."
+                ),
+                "Animales agresivos": (
+                    "EL ENCUENTRO",
+                    "El animal apareció a una distancia demasiado corta para "
+                    "permitir una retirada tranquila. El intento de escapar "
+                    "provocó una reacción inesperada del entorno."
+                ),
+                "No poder pedir ayuda": (
+                    "SIN SEÑAL",
+                    "La situación se volvió crítica mientras el dispositivo "
+                    "de comunicación permanecía sin señal. El lugar estaba "
+                    "suficientemente lejos para que la ayuda tardara demasiado en llegar."
+                ),
+            }
+    
+            if lugar_temido in miedo_escenarios:
+                escenarios.append(miedo_escenarios[lugar_temido])
+    
+            if not escenarios:
+                escenarios = [
+                    (
+                        "EL ACCIDENTE IMPREVISTO",
+                        "El escenario parece completamente normal. Precisamente "
+                        "por eso nadie identifica el peligro hasta que la cadena "
+                        "de pequeños acontecimientos ya no puede detenerse."
+                    ),
+                    (
+                        "UNA NOCHE EXTRAÑA",
+                        "No existe una señal evidente. Solo una sucesión de "
+                        "detalles pequeños que, vistos después, parecen haber "
+                        "estado apuntando hacia el mismo momento."
+                    ),
+                    (
+                        "EL DESCUIDO",
+                        "Una acción cotidiana se realiza de forma automática. "
+                        "Un error mínimo desencadena una secuencia que nadie había previsto."
+                    ),
+                ]
+    
+            titulo_escenario, descripcion_escenario = elegir(escenarios, rng)
+    
+            lugares = []
+    
+            if "Automóvil" in transporte_principal:
+                lugares.append("una avenida de tránsito rápido")
+            if "Motocicleta" in transporte_principal:
+                lugares.append("una vía urbana con pavimento irregular")
+            if horario_mayor_riesgo in ["Noche", "Madrugada"]:
+                lugares.append("una calle con iluminación intermitente")
+            if piso >= 10:
+                lugares.append(f"un edificio situado en el nivel {piso}")
+            if vivienda == "Departamento":
+                lugares.append("un edificio residencial")
+            if vivienda == "Lugar aislado":
+                lugares.append("una propiedad alejada del tránsito habitual")
+            if lugar_frecuente == "Carretera":
+                lugares.append("un tramo de carretera de circulación rápida")
+            if lugar_frecuente == "Obra":
+                lugares.append("una zona de trabajo en construcción")
+            if lugar_frecuente == "Taller":
+                lugares.append("un taller con maquinaria en funcionamiento")
+            if lugar_frecuente == "Estación de transporte":
+                lugares.append(
+                    "una estación de transporte durante una hora de alta circulación"
+                )
+    
+            if not lugares:
+                lugares.append("un entorno cotidiano que conocías perfectamente")
+    
+            lugar_final = elegir(lugares, rng)
+    
+            detalle_psicologico = elegir([
+                "Lo inquietante es que durante los días anteriores habías notado pequeños detalles fuera de lugar.",
+                "Existe un instante previo en el que todo parece demasiado silencioso.",
+                "El último recuerdo claro corresponde a un detalle completamente insignificante.",
+                "Quienes reconstruyen la escena descubren que una decisión aparentemente pequeña cambió toda la secuencia.",
+                "La parte más perturbadora es que el lugar era completamente familiar.",
+                "Horas antes, el expediente registra una rutina exactamente igual a muchas otras. Nadie esperaba que esa fuera la última.",
+            ], rng)
+    
+            detalles_miedo = {
+                "Agua profunda": "El expediente también registra una incomodidad marcada ante la cercanía del agua.",
+                "Fuego": "El calor y el olor a humo aparecen entre los detalles que más alteran la reconstrucción.",
+                "Alturas": "La altura forma parte de los factores que el expediente considera especialmente sensibles.",
+                "Terremotos": "La actividad del suelo aparece como un factor psicológico relevante en la reconstrucción.",
+                "Volcanes": "La presencia de actividad volcánica aparece como una de las imágenes más inquietantes del expediente.",
+                "Tormentas": "Los cambios bruscos del clima forman parte de los elementos que elevan la tensión de la escena.",
+                "Accidentes": "La posibilidad de una cadena repentina de acontecimientos aparece repetidamente en el expediente.",
+                "Espacios cerrados": "El encierro aparece como uno de los elementos que más altera la percepción del tiempo.",
+                "Soledad": "La ausencia de testigos hace que la reconstrucción resulte especialmente perturbadora.",
+                "Oscuridad": "La falta de referencias visuales aparece como un elemento decisivo en la escena.",
+                "Perder el control": "La sensación de que los acontecimientos avanzan sin posibilidad de intervenir domina la reconstrucción.",
+                "Quedar atrapado": "La imposibilidad de abandonar el lugar aparece como uno de los detalles más inquietantes.",
+                "Ninguno": "",
+            }
+    
+            detalle_miedo = detalles_miedo.get(segundo_temor, "")
+            if detalle_miedo:
+                detalle_psicologico += " " + detalle_miedo
+    
+            pareja_memoria = "esposa" if sexo == "Masculino" else "esposo"
+    
+            dedicatoria = (
+                f"En memoria de tu {pareja_memoria}, tus amigos y seres queridos, "
+                "que conservan tu recuerdo y las pequeñas cosas que dejaste atrás."
+            )
+    
+            causa_final = (
+                f"{descripcion_escenario} El incidente ocurrió en {lugar_final}. "
+                f"{detalle_psicologico}"
+            )
+    
+            nacimiento_str = fecha_nacimiento.strftime("%d/%m/%Y")
+            muerte_str = fecha_muerte.strftime("%d/%m/%Y")
+            folio_num = f"DEF-{rng.randint(100000, 999999)}-2026"
+    
+            texto_a_leer = (
+                f"Hasta aquí llegaste, {nombre_str}. La Voz de Ultratumba ha cerrado tu expediente. "
+                f"El escenario registrado es {titulo_escenario}. "
+                f"{causa_final} "
+                f"Muriste a los {edad_muerte} años. "
+                f"{dedicatoria}"
+            )
+    
+            resultado = dict(
+                nombre=nombre_str,
+                sexo=sexo,
+                nacimiento=nacimiento_str,
+                muerte=muerte_str,
+                edad_muerte=edad_muerte,
+                estado=estado_civil.upper(),
+                ocupacion=ocupacion.upper(),
+                piso=piso,
+                nivel=nivel,
+                riesgo=riesgo,
+                escenario=titulo_escenario,
+                descripcion=descripcion_escenario,
+                lugar=lugar_final,
+                causa=causa_final,
+                detalle=detalle_psicologico,
+                dedicatoria=dedicatoria,
+                texto=texto_a_leer,
+                folio=folio_num,
+                edad=edad_actual,
+                miedo=lugar_temido,
+                segundo_miedo=segundo_temor,
+                fecha_registro=datetime.now().strftime("%d/%m/%Y"),
+            )
+    
+            st.session_state.resultado = resultado
+            st.session_state.folio = folio_num
+            st.session_state.resultado_generado = True
+            st.session_state.pdf_generado = None
+    
+            # ====================================================
+            # GENERACIÓN DE AUDIO
+            # ====================================================
+            audio, error_audio = generar_voz_ultratumba(texto_a_leer)
+    
+            st.session_state.audio_generado = audio
+            st.session_state.audio_error = error_audio
 
 
 # ============================================================
-# MOSTRAR RESULTADOS
+# MOSTRAR RESULTADO
 # ============================================================
-
-if st.session_state.expediente:
-
-    expediente = st.session_state.expediente
-
-    # Recuperamos el nombre desde la sentencia/formulario de forma segura.
-    # Se conserva en session_state mediante una extracción simple.
-    # Si quieres persistirlo entre sesiones, habría que usar almacenamiento externo.
-
-    st.markdown("---")
+if st.session_state.resultado_generado and st.session_state.resultado:
+    r = st.session_state.resultado
 
     st.markdown(
-        f"""
-        <div class="expediente">
-        <b>EXPEDIENTE:</b> DEF-{expediente['indice']:02d}{random.randint(100,999)}-{date.today().year}<br>
-        <b>ÍNDICE NARRATIVO:</b> {expediente['indice']} / 100<br>
-        <b>FECHA DEL REGISTRO:</b> {date.today().strftime("%d/%m/%Y")}<br>
-        <b>ESTADO:</b> REGISTRO CERRADO
-        </div>
-        """,
-        unsafe_allow_html=True,
+        '<div id="lapida-anchor" style="height:1px; scroll-margin-top:30px;"></div>',
+        unsafe_allow_html=True
     )
 
-    st.markdown("## 🕯️ Registro de Voz de Ultratumba")
+    st.components.v1.html("""
+    <script>
+    (() => {
+        function irALapida() {
+            try {
+                const parentDoc = window.parent.document;
+                const objetivo = parentDoc.getElementById("lapida-anchor");
 
-    st.markdown(
-        f"""
-        <div class="sentencia-box">
-        {html.escape(st.session_state.sentencia)}
+                if (objetivo) {
+                    objetivo.scrollIntoView({
+                        behavior: "smooth",
+                        block: "start"
+                    });
+                    return true;
+                }
+            } catch(e) {}
+
+            return false;
+        }
+
+        setTimeout(irALapida, 150);
+        setTimeout(irALapida, 500);
+        setTimeout(irALapida, 1000);
+    })();
+    </script>
+    """, height=0, scrolling=False)
+
+    # ========================================================
+    # LÁPIDA
+    # ========================================================
+    st.components.v1.html(f"""
+    <style>
+      html,body{{margin:0;padding:0;background:transparent;}}
+      .lapida-canvas{{background:radial-gradient(circle at 50% 20%,#35343a 0%,#18171c 45%,#0c0b0f 100%);border:5px double #00ff66;border-radius:180px 180px 25px 25px;padding:55px 28px 40px;color:#c1c1cb;text-align:center;font-family:Georgia,serif;box-shadow:0 20px 50px rgba(0,0,0,.95),0 0 35px rgba(0,255,102,.10);width:min(470px,90vw);margin:10px auto;border-bottom:20px solid #080709;box-sizing:border-box;animation:entrada 1.2s ease;}}
+      @keyframes entrada{{from{{opacity:0;transform:translateY(20px) scale(.96);filter:brightness(0)}}to{{opacity:1;transform:none;filter:brightness(1)}}}}
+      .rip{{font-size:clamp(30px,8vw,40px);font-weight:bold;color:#020204;letter-spacing:6px;margin-bottom:8px;text-shadow:0 1px 0 #666;}}
+      .nombre{{font-size:clamp(18px,5vw,25px);font-weight:bold;color:white;text-transform:uppercase;letter-spacing:2px;overflow-wrap:anywhere;}}
+      .fechas{{font-size:13px;color:#00ff66;font-style:italic;margin-bottom:22px;border-bottom:1px double #3d0066;padding-bottom:12px;line-height:1.7;}}
+      .edad-muerte{{color:#9d4edd;font-style:normal;font-weight:bold;font-size:14px;letter-spacing:1px;}}
+      .causa{{font-size:13px;color:#e2e2e9;line-height:1.6;text-align:justify;margin-bottom:25px;background:rgba(5,2,10,.72);padding:14px;border-top:1px solid #3d0066;border-bottom:1px solid #3d0066;}}
+      .dedicatoria{{font-size:12px;color:#777785;font-style:italic;line-height:1.4;}}
+    </style>
+    <div class="lapida-canvas">
+      <div class="rip">R. I. P.</div>
+      <div class="nombre">{html.escape(r['nombre'])}</div>
+      <div class="fechas">
+        {r['nacimiento']} &nbsp;—&nbsp; {r['muerte']}<br>
+        <span class="edad-muerte">MURIÓ A LOS {r['edad_muerte']} AÑOS</span>
+      </div>
+      <div class="causa"><b>CAUSA DE MI MUERTE:</b><br>{html.escape(r['causa'])}</div>
+      <div class="dedicatoria">"{html.escape(r['dedicatoria'])}"</div>
+    </div>
+    """, height=525, scrolling=False)
+
+    st.markdown(f"""
+    <div class="resultado-profundo">
+      <b>EXPEDIENTE:</b> {html.escape(r['folio'])}<br>
+      <b>ESTADO DEL VELO:</b> {html.escape(r['nivel'])}<br>
+      <b>ÍNDICE NARRATIVO:</b> {r['riesgo']} / 100<br>
+      <b>ESCENARIO:</b> {html.escape(r['escenario'])}<br>
+      <b>ENTORNO:</b> {html.escape(r['lugar'])}<br>
+      <b>EDAD ACTUAL:</b> {r['edad']} años<br>
+      <b>EDAD AL FALLECER:</b> {r['edad_muerte']} años<br>
+      <b>FECHA DEL REGISTRO:</b> {r['fecha_registro']}
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ========================================================
+    # VOZ
+    # ========================================================
+    st.markdown("### 🎙️ Sentencia de Voz de Ultratumba")
+
+    if st.session_state.audio_generado:
+        audio_b64 = base64.b64encode(
+            st.session_state.audio_generado
+        ).decode("ascii")
+
+        st.components.v1.html(f"""
+        <div style="text-align:center;background:#110b1a;padding:18px;border:1px solid #9d4edd;border-radius:8px;font-family:monospace;color:#00ff66;">
+          <div style="margin-bottom:12px;">🔊 VOZ DE ULTRATUMBA ACTIVA</div>
+          <audio id="sentencia-oraculo" controls preload="metadata"
+                 style="width:94%;height:48px;">
+            <source src="data:audio/wav;base64,{audio_b64}" type="audio/wav">
+          </audio>
+          <div style="color:#777785;font-size:10px;margin-top:10px;">
+            Voz masculina grave con reverberación suave.
+          </div>
         </div>
-        """,
-        unsafe_allow_html=True,
-    )
 
-    # --------------------------------------------------------
-    # AUDIO
-    # --------------------------------------------------------
+        <script>
+        (() => {{
+          const player=document.getElementById('sentencia-oraculo');
+          const parent=window.parent.document;
+          const musica=parent.getElementById('oraculo-ambiente-persistente');
 
-    st.markdown("### 🎙️ Voz del expediente")
+          if(!player) return;
 
-    if st.session_state.audio_bytes:
+          player.addEventListener('play',()=>{{
+            if(musica){{
+              musica.volume=.08;
+              const p=musica.play();
+              if(p&&p.catch)p.catch(()=>{{}});
+            }}
+          }});
 
-        # IMPORTANTE:
-        # Este es EXACTAMENTE el mismo archivo que se descarga.
-        st.audio(
-            st.session_state.audio_bytes,
-            format="audio/mp3",
-        )
+          player.addEventListener('pause',()=>{{
+            if(musica) musica.volume=.42;
+          }});
+
+          player.addEventListener('ended',()=>{{
+            if(musica) musica.volume=.42;
+          }});
+        }})();
+        </script>
+        """, height=150, scrolling=False)
 
         st.download_button(
-            "⬇️ DESCARGAR AUDIO DE LA VOZ",
-            data=st.session_state.audio_bytes,
-            file_name=st.session_state.audio_filename,
-            mime="audio/mpeg",
+            "☠️ DESCARGAR SENTENCIA DE ULTRATUMBA",
+            data=st.session_state.audio_generado,
+            file_name=(
+                f"Sentencia_Ultratumba_"
+                f"{r['nombre'].replace(' ', '_')}.wav"
+            ),
+            mime="audio/wav",
             use_container_width=True,
+            on_click="ignore",
+            key="descargar_voz"
         )
 
     else:
-        st.write("La generación de voz no está disponible en este entorno.")
-
-    # --------------------------------------------------------
-    # ACTA
-    # --------------------------------------------------------
-
-    st.markdown("### 📜 Acta de defunción")
-
-    if st.session_state.acta_bytes:
-        st.download_button(
-            "⚖️ DESCARGAR ACTA DE DEFUNCIÓN",
-            data=st.session_state.acta_bytes,
-            file_name=st.session_state.acta_filename,
-            mime="application/pdf",
-            use_container_width=True,
+        mensaje = st.session_state.audio_error or (
+            "La voz del expediente no pudo ser generada."
         )
 
-    # --------------------------------------------------------
-    # FINAL
-    # --------------------------------------------------------
-
-    st.markdown(
-        """
-        <div class="final-text">
-        👁<br>
-        EL EXPEDIENTE HA SIDO CERRADO.<br><br>
-        Algunas puertas se abren una sola vez.
+        st.markdown(f"""
+        <div class="oraculo-box">
+            <b>⚠️ LA VOZ DEL EXPEDIENTE NO PUDO SER GENERADA</b>
+            <div class="error-voz">{html.escape(mensaje)}</div>
         </div>
-        """,
-        unsafe_allow_html=True,
+        """, unsafe_allow_html=True)
+
+    # ========================================================
+    # PDF
+    # ========================================================
+    if st.session_state.pdf_generado is None:
+        buffer = io.BytesIO()
+
+        def marco(canvas, doc):
+            canvas.saveState()
+            canvas.setStrokeColor(colors.HexColor("#7b2cbf"))
+            canvas.setLineWidth(2)
+            canvas.rect(20, 20, 572, 752)
+            canvas.setLineWidth(.5)
+            canvas.rect(24, 24, 564, 744)
+            canvas.setFillColor(colors.HexColor("#111111"))
+            canvas.rect(530, 710, 8, 40, fill=1, stroke=0)
+            canvas.rect(516, 732, 36, 8, fill=1, stroke=0)
+            dibujar_codigo_barras(
+                canvas,
+                40,
+                45,
+                sum(ord(c) for c in r['folio'])
+            )
+            canvas.restoreState()
+
+        doc = SimpleDocTemplate(
+            buffer,
+            pagesize=letter,
+            leftMargin=36,
+            rightMargin=36,
+            topMargin=40,
+            bottomMargin=100
+        )
+
+        styles = getSampleStyleSheet()
+
+        sg = ParagraphStyle(
+            "sg",
+            fontName="Helvetica-Bold",
+            fontSize=14,
+            leading=16,
+            alignment=1,
+            textColor=colors.HexColor("#111111")
+        )
+        ss = ParagraphStyle(
+            "ss",
+            fontName="Helvetica",
+            fontSize=9,
+            leading=11,
+            alignment=1,
+            textColor=colors.HexColor("#444444")
+        )
+        sec = ParagraphStyle(
+            "sec",
+            fontName="Helvetica-Bold",
+            fontSize=10,
+            leading=12,
+            textColor=colors.white,
+            backColor=colors.HexColor("#4a154b"),
+            borderPadding=4
+        )
+        campo = ParagraphStyle(
+            "campo",
+            fontName="Helvetica-Bold",
+            fontSize=9,
+            leading=11,
+            textColor=colors.HexColor("#222222")
+        )
+        val = ParagraphStyle(
+            "val",
+            fontName="Helvetica",
+            fontSize=9,
+            leading=11,
+            textColor=colors.HexColor("#444444")
+        )
+        causa = ParagraphStyle(
+            "causa",
+            fontName="Helvetica-BoldOblique",
+            fontSize=9.5,
+            leading=14,
+            textColor=colors.HexColor("#8b0000")
+        )
+
+        story = [
+            Paragraph("ESTADOS UNIDOS DEL MÁS ALLÁ", sg),
+            Paragraph(
+                "REGISTRO CIVIL RESTRINGIDO • ACTA DE DEFUNCIÓN",
+                ss
+            ),
+            Spacer(1, 15)
+        ]
+
+        story.append(Table(
+            [
+                [
+                    Paragraph(
+                        "<b>CRIPTA LOCAL:</b> Valle de las Sombras",
+                        val
+                    ),
+                    Paragraph(
+                        f"<b>NÚMERO DE CONTROL:</b> {r['folio']}",
+                        val
+                    )
+                ],
+                [
+                    Paragraph(
+                        "<b>LIBRO:</b> Destinos Cerrados",
+                        val
+                    ),
+                    Paragraph(
+                        f"<b>FECHA DE SISTEMA:</b> {r['fecha_registro']}",
+                        val
+                    )
+                ]
+            ],
+            colWidths=[250, 270],
+            style=[
+                ("LINEBELOW", (0, 0), (-1, -1), .5, colors.HexColor("#CCC")),
+                ("PADDING", (0, 0), (-1, -1), 4)
+            ]
+        ))
+
+        story.append(Spacer(1, 15))
+        story.append(Paragraph("I. DATOS DE LA PERSONA", sec))
+        story.append(Spacer(1, 6))
+
+        story.append(Table(
+            [
+                [Paragraph("NOMBRE COMPLETO:", campo),
+                 Paragraph(html.escape(r['nombre']), val)],
+                [Paragraph("SEXO:", campo),
+                 Paragraph(html.escape(r['sexo']), val)],
+                [Paragraph("FECHA DE NACIMIENTO:", campo),
+                 Paragraph(r['nacimiento'], val)],
+                [Paragraph("ESTADO CIVIL:", campo),
+                 Paragraph(html.escape(r['estado']), val)],
+                [Paragraph("ACTIVIDAD:", campo),
+                 Paragraph(html.escape(r['ocupacion']), val)],
+                [Paragraph("NIVEL DEL VELO:", campo),
+                 Paragraph(html.escape(r['nivel']), val)],
+                [Paragraph("EDAD AL FALLECER:", campo),
+                 Paragraph(f"{r['edad_muerte']} años", val)]
+            ],
+            colWidths=[150, 370],
+            style=[
+                ("INNERGRID", (0, 0), (-1, -1), .25, colors.HexColor("#E0E0E0")),
+                ("BOX", (0, 0), (-1, -1), .5, colors.HexColor("#AAA")),
+                ("PADDING", (0, 0), (-1, -1), 5)
+            ]
+        ))
+
+        story.append(Spacer(1, 15))
+        story.append(Paragraph("II. DATOS DEL FALLECIMIENTO", sec))
+        story.append(Spacer(1, 6))
+
+        story.append(Table(
+            [
+                [Paragraph("FECHA DEL DECESO:", campo),
+                 Paragraph(r['muerte'], val)],
+                [Paragraph("EDAD AL FALLECER:", campo),
+                 Paragraph(f"{r['edad_muerte']} años", val)],
+                [Paragraph("ESCENARIO:", campo),
+                 Paragraph(html.escape(r['escenario']), val)],
+                [Paragraph("LUGAR:", campo),
+                 Paragraph(html.escape(r['lugar']), val)],
+                [Paragraph("CAUSA:", campo),
+                 Paragraph(html.escape(r['causa']), causa)]
+            ],
+            colWidths=[150, 370],
+            style=[
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("INNERGRID", (0, 0), (-1, -1), .25, colors.HexColor("#E0E0E0")),
+                ("BOX", (0, 0), (-1, -1), .5, colors.HexColor("#AAA")),
+                ("PADDING", (0, 0), (-1, -1), 6),
+                ("BACKGROUND", (1, 4), (1, 4), colors.HexColor("#FFF2F2"))
+            ]
+        ))
+
+        story.append(Spacer(1, 15))
+        story.append(Paragraph("III. LECTURA DEL EXPEDIENTE", sec))
+        story.append(Spacer(1, 6))
+        story.append(
+            Paragraph(
+                html.escape(r['descripcion'] + " " + r['detalle']),
+                val
+            )
+        )
+
+        story.append(Spacer(1, 12))
+        story.append(Paragraph("IV. EPITAFIO", sec))
+        story.append(Spacer(1, 5))
+        story.append(
+            Paragraph(
+                f'<i>"{html.escape(r["dedicatoria"])}"</i>',
+                val
+            )
+        )
+
+        story.append(Spacer(1, 15))
+        story.append(Paragraph(
+            "V. CADENA DIGITAL DE AUTENTICACIÓN",
+            sec
+        ))
+        story.append(Spacer(1, 5))
+        story.append(
+            Paragraph(
+                f"<font size=7 color='#666666'>"
+                f"||{r['folio']}||{r['nombre']}||{r['muerte']}||"
+                f"{sum(ord(c) for c in r['folio'])}"
+                f"#PARCAS_AUTENTICACION||</font>",
+                ss
+            )
+        )
+
+        story.append(Spacer(1, 25))
+        story.append(Table(
+            [[
+                Paragraph(
+                    "_____________________________<br/>"
+                    "Átropos<br/>Oficial Registrador del Hilo",
+                    ParagraphStyle(
+                        "f1",
+                        fontName="Helvetica",
+                        fontSize=7.5,
+                        alignment=1
+                    )
+                ),
+                Paragraph(
+                    "_____________________________<br/>"
+                    "La Parca Mayor<br/>Interventor del Destino",
+                    ParagraphStyle(
+                        "f2",
+                        fontName="Helvetica",
+                        fontSize=7.5,
+                        alignment=1
+                    )
+                )
+            ]],
+            colWidths=[250, 250],
+            style=[("PADDING", (0, 0), (-1, -1), 2)]
+        ))
+
+        doc.build(
+            story,
+            onFirstPage=marco,
+            onLaterPages=marco
+        )
+
+        st.session_state.pdf_generado = buffer.getvalue()
+
+    st.download_button(
+        "⚖️ DESCARGAR ACTA DE DEFUNCIÓN",
+        data=st.session_state.pdf_generado,
+        file_name=(
+            f"Acta_Defuncion_{r['nombre'].replace(' ', '_')}.pdf"
+        ),
+        mime="application/pdf",
+        use_container_width=True,
+        on_click="ignore",
+        key="descargar_acta"
     )
 
-
-# ============================================================
-# BOTÓN LIMPIAR
-# ============================================================
-
-st.markdown("---")
-
-if st.button("🧹 LIMPIAR CAMPOS Y COMENZAR OTRO EXPEDIENTE", use_container_width=True):
-
-    # Este botón SÍ reinicia los datos.
-    st.session_state.expediente = None
-    st.session_state.sentencia = None
-    st.session_state.audio_bytes = None
-    st.session_state.audio_filename = None
-    st.session_state.acta_bytes = None
-    st.session_state.acta_filename = None
-    st.rerun()
+    st.markdown(f"""
+    <div class="lectura-final">
+      👁️<br><br>
+      Hasta aquí llegaste, {html.escape(r['nombre'])}.<br>
+      El expediente <b>{html.escape(r['folio'])}</b> ha sido cerrado.<br><br>
+      <span style="color:#777785;">Algunas puertas se abren una sola vez.</span>
+    </div>
+    """, unsafe_allow_html=True)
 
 
 # ============================================================
-# PIE DE PÁGINA
+# PIE DE PÁGINA / VISITAS / APOYO
 # ============================================================
-
-mostrar_hud_inferior()
-
 st.markdown(
-    '<div class="footer-signature">CREATED BY ALEX A. // EVIL_PHOTO / ULTRATUMBA</div>',
-    unsafe_allow_html=True,
+    f"""
+    <div class="contador-visitas">
+        ☠️ VISITAS AL PORTAL
+        <div style="margin-top:8px;">
+            <img src="https://hits.sh/{COUNTER_ID}.svg?style=flat-square&label=VISITAS&color=00ff66&labelColor=1a0033"
+                 alt="Contador de visitas"
+                 style="height:24px;">
+        </div>
+    </div>
+
+    <div class="apoyar-proyecto">
+        <a href="{html.escape(PAYPAL_URL, quote=True)}" target="_blank" rel="noopener noreferrer">
+            🖤 APOYAR PROYECTO
+        </a>
+    </div>
+
+    <div class="footer-alex">
+        CREATED BY ALEX A.
+    </div>
+    """,
+    unsafe_allow_html=True
 )
