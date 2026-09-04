@@ -30,18 +30,23 @@ PAYPAL_URL = "https://www.paypal.com/ncp/payment/HAALKPRK6DT8G"
 # ============================================================
 # OPENAI / CHATGPT
 # ============================================================
+# ============================================================
+# 🔐 PEGA AQUÍ TU API KEY DE OPENAI
+# ============================================================
 # IMPORTANTE:
-# NO pongas aquí tu API key si la aplicación será pública.
-# El usuario la introduce desde la interfaz en un campo de contraseña.
+# Esta clave queda escrita directamente dentro del código.
+# NO compartas este archivo públicamente si contiene una clave real.
+# Si la clave aparece en GitHub, redes sociales o capturas, revócala
+# y genera una nueva desde tu cuenta de OpenAI.
 #
-# Si tú quieres usar una clave privada del servidor, puedes usar:
-# OPENAI_API_KEY_SERVIDOR = st.secrets.get("OPENAI_API_KEY", "")
+# EJEMPLO:
+# OPENAI_API_KEY_SERVIDOR = "sk-proj-xxxxxxxxxxxxxxxxxxxxxxxx"
 #
-# Para la opción solicitada, déjalo vacío:
+# 👇 PEGA TU CLAVE ENTRE LAS COMILLAS DE ESTA LÍNEA:
 OPENAI_API_KEY_SERVIDOR = "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"
 
 # Modelo usado por "MI MUERTE MÁS DETALLADA".
-# Puedes cambiarlo si tu cuenta tiene acceso a otro modelo.
+# Puedes cambiarlo si tu proyecto tiene acceso a otro modelo.
 OPENAI_MODEL = "gpt-5.6-luna"
 
 for key, default in {
@@ -54,7 +59,6 @@ for key, default in {
     "folio": None,
     "ia_detalle": None,
     "ia_error": None,
-    "api_key_usuario": "",
 }.items():
     if key not in st.session_state:
         st.session_state[key] = default
@@ -72,7 +76,7 @@ def limpiar_todo():
         "campo_cansado", "campo_objetos", "campo_visibilidad",
         "campo_atencion", "campo_lugar", "campo_creencias",
         "campo_terror", "campo_reliquias", "campo_temor",
-        "campo_segundo_temor", "api_key_usuario",
+        "campo_segundo_temor",
     ]
 
     for key in widget_keys:
@@ -865,19 +869,17 @@ def instalar_ambiente():
 # OPENAI
 # ============================================================
 def obtener_api_key():
-    if OPENAI_API_KEY_SERVIDOR.strip():
-        return OPENAI_API_KEY_SERVIDOR.strip()
-    return st.session_state.get("api_key_usuario", "").strip()
+    """Obtiene exclusivamente la clave configurada arriba en el código."""
+    return OPENAI_API_KEY_SERVIDOR.strip()
 
 
 def generar_muerte_detallada_con_ia(resultado):
     api_key = obtener_api_key()
 
-    if not api_key:
+    if not api_key or api_key == "PEGA_AQUI_TU_API_KEY":
         return None, (
-            "No se encontró una API key. "
-            "Escribe tu token en el campo «MI API DE CHATGPT» "
-            "antes de pulsar el botón."
+            "No se configuró la API key. Abre el código y pega tu clave "
+            "en OPENAI_API_KEY_SERVIDOR, en la sección OPENAI / CHATGPT."
         )
 
     try:
@@ -1052,28 +1054,8 @@ st.write("---")
 # ============================================================
 # CONFIGURACIÓN DE IA
 # ============================================================
-with st.expander("🤖 CONFIGURACIÓN DE IA — OPCIONAL"):
-    st.markdown(
-        "### 🔐 MI API DE CHATGPT",
-        unsafe_allow_html=True
-    )
-
-    st.text_input(
-        "Coloca aquí tu API key:",
-        type="password",
-        key="api_key_usuario",
-        placeholder="sk-...",
-        help="La clave se utiliza solamente para generar la lectura detallada.",
-    )
-
-    st.markdown(
-        '<p class="api-aviso">'
-        "Tu API key no está escrita dentro del código. Si publicas esta aplicación, "
-        "no recomiendo colocar una clave fija en el código fuente. "
-        "El botón de lectura detallada solo funcionará cuando exista una clave válida."
-        "</p>",
-        unsafe_allow_html=True
-    )
+# La API key se configura directamente en OPENAI_API_KEY_SERVIDOR
+# al inicio del archivo. No se solicita al usuario desde la interfaz.
 
 
 # ============================================================
