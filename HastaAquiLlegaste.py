@@ -40,7 +40,7 @@ PAYPAL_URL = "https://www.paypal.com/ncp/payment/HAALKPRK6DT8G"
 #
 # Coloca aquí la URL RAW de tu archivo mms.txt:
 # https://raw.githubusercontent.com/TU_USUARIO/TU_REPOSITORIO/main/mms.txt
-DEEPSEEK_API_KEY_URL = "https://raw.githubusercontent.com/TU_USUARIO/TU_REPOSITORIO/main/mms.txt"
+DEEPSEEK_API_KEY_URL = "https://github.com/al3crash/hastaaquillegaste/blob/main/mms.txt"
 
 # Modelo que utilizará "MI MUERTE MÁS DETALLADA".
 # DeepSeek ofrece compatibilidad con el formato de OpenAI.
