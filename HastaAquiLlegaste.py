@@ -31,23 +31,21 @@ PAYPAL_URL = "https://www.paypal.com/ncp/payment/HAALKPRK6DT8G"
 # OPENAI / CHATGPT
 # ============================================================
 # ============================================================
-# 🔐 PEGA AQUÍ TU API KEY DE OPENAI
+# 🔐 API DE OPENAI DESDE GITHUB
 # ============================================================
-# IMPORTANTE:
-# Esta clave queda escrita directamente dentro del código.
-# NO compartas este archivo públicamente si contiene una clave real.
-# Si la clave aparece en GitHub, redes sociales o capturas, revócala
-# y genera una nueva desde tu cuenta de OpenAI.
+# El programa NO le pide la API key al usuario.
+# Lee automáticamente el contenido de mms.txt desde GitHub.
+#
+# IMPORTANTE: si mms.txt es público, la API key también será pública
+# y cualquier persona podría copiarla y consumir tu saldo.
+# Para una aplicación pública, lo más seguro es usar st.secrets.
+# Si aun así quieres usar GitHub, coloca aquí la URL RAW de mms.txt.
 #
 # EJEMPLO:
-# OPENAI_API_KEY_SERVIDOR = "sk-proj-xxxxxxxxxxxxxxxxxxxxxxxx"
-#
-# 👇 PEGA TU CLAVE ENTRE LAS COMILLAS DE ESTA LÍNEA:
-OPENAI_API_KEY_SERVIDOR = "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"
-
+# https://raw.githubusercontent.com/TU_USUARIO/TU_REPOSITORIO/main/mms.txt
+MMS_API_KEY_URL = "https://raw.githubusercontent.com/TU_USUARIO/TU_REPOSITORIO/main/mms.txt"
 
 # Modelo usado por "MI MUERTE MÁS DETALLADA".
-# Puedes cambiarlo si tu proyecto tiene acceso a otro modelo.
 OPENAI_MODEL = "gpt-5.6-luna"
 
 for key, default in {
@@ -870,18 +868,42 @@ def instalar_ambiente():
 # OPENAI
 # ============================================================
 def obtener_api_key():
-    """Obtiene exclusivamente la clave configurada arriba en el código."""
-    return OPENAI_API_KEY_SERVIDOR.strip()
+    """Descarga la API key desde el archivo mms.txt alojado en GitHub."""
+    import urllib.request
+
+    if not MMS_API_KEY_URL or "TU_USUARIO" in MMS_API_KEY_URL or "TU_REPOSITORIO" in MMS_API_KEY_URL:
+        raise RuntimeError(
+            "No configuraste MMS_API_KEY_URL. Coloca la URL RAW de GitHub "
+            "que apunta a mms.txt."
+        )
+
+    try:
+        request = urllib.request.Request(
+            MMS_API_KEY_URL,
+            headers={"User-Agent": "HastaAquiLlegaste/1.0"},
+        )
+        with urllib.request.urlopen(request, timeout=10) as response:
+            api_key = response.read().decode("utf-8").strip()
+    except Exception as exc:
+        raise RuntimeError(
+            "No se pudo leer mms.txt desde GitHub. "
+            f"Verifica la URL RAW y que el archivo exista. Detalle: {exc}"
+        ) from exc
+
+    # Permite que mms.txt tenga solamente la clave, con espacios o saltos de línea.
+    api_key = api_key.strip().strip('\"').strip("'")
+
+    if not api_key:
+        raise RuntimeError("mms.txt está vacío o no contiene una API key válida.")
+
+    return api_key
 
 
 def generar_muerte_detallada_con_ia(resultado):
-    api_key = obtener_api_key()
-
-    if not api_key or api_key == "PEGA_AQUI_TU_API_KEY":
-        return None, (
-            "No se configuró la API key. Abre el código y pega tu clave "
-            "en OPENAI_API_KEY_SERVIDOR, en la sección OPENAI / CHATGPT."
-        )
+    try:
+        api_key = obtener_api_key()
+    except Exception as exc:
+        return None, str(exc)
 
     try:
         from openai import OpenAI
@@ -1055,8 +1077,8 @@ st.write("---")
 # ============================================================
 # CONFIGURACIÓN DE IA
 # ============================================================
-# La API key se configura directamente en OPENAI_API_KEY_SERVIDOR
-# al inicio del archivo. No se solicita al usuario desde la interfaz.
+# La API key se obtiene automáticamente desde mms.txt en GitHub.
+# No se solicita al usuario desde la interfaz.
 
 
 # ============================================================
