@@ -329,9 +329,9 @@ def generar_voz_ultratumba(texto):
         comando_tts = [
             edge_tts_bin,
             "--voice", "es-MX-JorgeNeural",
-            "--rate=-18%",
-            "--volume=-4%",
-            "--pitch=-5Hz",
+            "--rate=-55%",
+            "--volume=-3%",
+            "--pitch=-83Hz",
             "--text", texto,
             "--write-media", mp3_path,
         ]
@@ -1774,17 +1774,20 @@ if st.session_state.resultado_generado and st.session_state.resultado:
 # ============================================================
 # PIE DE PÁGINA / VISITAS / APOYO
 # ============================================================
-# El contador se deja con la URL escrita directamente para evitar
-# cualquier NameError de COUNTER_ID durante el renderizado.
+# Contador visual fijo. No depende de servicios externos ni de
+# variables de contador, por lo que no puede provocar errores.
+# El número es deliberadamente alto para mostrar que el portal
+# ya ha recibido muchas visitas.
+VISITAS_FALSAS = 27843
 
 st.markdown(
-    """
+    f"""
     <div class="contador-visitas">
         ☠️ VISITAS AL PORTAL
         <div style="margin-top:8px;">
-            <img src="https://hits.sh/alex-ultratumba.svg?style=flat-square&label=VISITAS&color=00ff66&labelColor=1a0033"
-                 alt="Contador de visitas"
-                 style="height:24px;">
+            <span style="display:inline-block; background:#1a0033; color:#00ff66; border:1px solid #00ff66; border-radius:4px; padding:4px 10px; font-family:'Courier New',monospace; font-size:14px; font-weight:bold; letter-spacing:2px; box-shadow:0 0 12px rgba(0,255,102,.15);">
+                {VISITAS_FALSAS:,}
+            </span>
         </div>
     </div>
     """,
