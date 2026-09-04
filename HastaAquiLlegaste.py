@@ -28,33 +28,9 @@ st.set_page_config(
 # ============================================================
 # Cambia estos valores si quieres usar otro contador o tu enlace de PayPal.
 
-# Nota de recomendación, Contador persistente y Agradecimiento de donación PayPal integrado
-html_HUD_info = """
-<div style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 25px; font-family: 'Courier New', monospace;">
-    <div style="background-color: #1a1000; border: 1px solid #ffaa00; padding: 10px; border-radius: 4px; font-size: 11px; color: #ffaa00;">
-        🖥️ <b>AVISO DE INTERFAZ:</b> Se recomienda encarecidamente ejecutar esta estación digital en un <b>dispositivo de pantalla grande (PC / Laptop)</b> para desplegar la mesa de control completa de manera óptima y garantizar la mejor experiencia pericial.
-    </div>
-    
-    <div style="display: flex; justify-content: space-between; align-items: center; background-color: #0f1115; border: 1px solid #1f242e; padding: 12px; border-radius: 4px; flex-wrap: wrap; gap: 10px;">
-        <div style="font-size: 12px; color: #00ff66; font-weight: bold; letter-spacing: 1px;">
-            📊 RASTREADOR DE TRÁFICO SPECTRAL: <span id="contadorVisitas" style="color: #fff; background: #220000; padding: 2px 8px; border-radius: 3px; border: 1px solid #ff2222;">...</span> ACCESOS
-        </div>
-        <div>
-            <a href="https://www.paypal.com/ncp/payment/HAALKPRK6DT8G" target="_blank" onclick="alert('⚡ TRANSMISIÓN ENCRIPTADA PAYPAL:\\n\\n¡Te agradecemos profundamente tu valiosa contribución! Tu apoyo económico será destinado al 100% para financiar los servidores, optimizar los algoritmos de red neuronal y seguir actualizando y manteniendo esta aplicación con nuevas herramientas forenses profesionales.\\n\\nPresiona Aceptar para continuar hacia la pasarela segura.')" style="
-                background: linear-gradient(135deg, #003087 0%, #0079C1 100%); color: #ffffff; font-family: Arial, sans-serif; font-size: 11px; font-weight: bold; text-decoration: none; padding: 8px 16px; border-radius: 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); display: inline-block; transition: transform 0.2s;
-            " onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">
-                💛 APOYAR PROYECTO
-            </a>
-        </div>
-    </div>
-</div>
-<script>
-    let visitas = localStorage.getItem('evil_visits_counter');
-    if (!visitas) { visitas = Math.floor(Math.random() * 45) + 12; }
-    visitas = parseInt(visitas) + 1; localStorage.setItem('evil_visits_counter', visitas);
-    document.getElementById('contadorVisitas').innerText = visitas;
-</script>
-"""
+
+PAYPAL_URL = "https://www.paypal.com/ncp/payment/HAALKPRK6DT8G"
+
 # ============================================================
 # ESTADO PERSISTENTE
 # ============================================================
