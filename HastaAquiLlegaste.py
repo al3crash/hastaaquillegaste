@@ -8,7 +8,6 @@ import os
 import shutil
 import tempfile
 import subprocess
-import unicodedata
 from datetime import datetime, timedelta
 
 from reportlab.lib.pagesizes import letter
@@ -45,7 +44,7 @@ DEEPSEEK_API_KEY_URL = "https://github.com/al3crash/hastaaquillegaste/blob/main/
 
 # Modelo que utilizará "MI MUERTE MÁS DETALLADA".
 # DeepSeek ofrece compatibilidad con el formato de OpenAI.
-DEEPSEEK_MODEL = "deepseek-chat"
+DEEPSEEK_MODEL = "deepseek-v4-flash"
 
 
 for key, default in {
@@ -296,45 +295,8 @@ def elegir(lista, rng):
 
 
 def texto_pdf_seguro(texto):
-    """
-    Limpia cualquier texto antes de enviarlo a ReportLab/Helvetica.
-
-    ReportLab con las fuentes estándar trabaja con Latin-1. La interfaz
-    web y DeepSeek siguen usando Unicode/UTF-8; esta conversión SOLO se
-    aplica al texto que va al PDF.
-    """
-    if texto is None:
-        return ""
-
-    texto = str(texto)
-    texto = unicodedata.normalize("NFKC", texto)
-
-    reemplazos = {
-        "\u2018": "'",   # comilla izquierda
-        "\u2019": "'",   # comilla derecha
-        "\u201c": '"',   # comilla doble izquierda
-        "\u201d": '"',   # comilla doble derecha
-        "\u2013": "-",  # guion medio
-        "\u2014": "-",  # guion largo
-        "\u2026": "...",# puntos suspensivos
-        "\u00a0": " ",   # espacio no separable
-        "\u2022": "-",  # viñeta
-        "\ufe0f": "",    # variation selector
-    }
-    for origen, destino in reemplazos.items():
-        texto = texto.replace(origen, destino)
-
-    # Última barrera: Helvetica/Latin-1 no puede representar Unicode
-    # fuera de su repertorio. Se reemplaza solo lo incompatible.
-    return texto.encode("latin-1", errors="replace").decode("latin-1")
-
-
-def texto_api_seguro(texto):
-    """Normaliza texto sin destruir Unicode antes de crear el JSON de la API."""
-    if texto is None:
-        return ""
-    texto = str(texto)
-    return unicodedata.normalize("NFC", texto)
+    """Convierte texto a la codificación que soporta Helvetica de ReportLab."""
+    return str(texto).encode("latin-1", errors="replace").decode("latin-1")
 
 
 def generar_semilla(*valores):
@@ -925,7 +887,7 @@ def obtener_api_key():
             headers={"User-Agent": "HastaAquiLlegaste/1.0"},
         )
         with urllib.request.urlopen(request, timeout=10) as response:
-            api_key = response.read().decode("utf-8-sig", errors="strict").strip()
+            api_key = response.read().decode("utf-8").strip()
     except Exception as exc:
         raise RuntimeError(
             "No se pudo leer mms.txt desde GitHub. "
@@ -935,10 +897,6 @@ def obtener_api_key():
     # Permite que mms.txt tenga solamente la clave, con espacios
     # o saltos de línea.
     api_key = api_key.strip().strip('"').strip("'")
-
-    # La API key viaja dentro de un encabezado HTTP, por lo que debe ser
-    # ASCII. Eliminamos BOM/espacios/caracteres accidentales antes de usarla.
-    api_key = "".join(ch for ch in api_key if 32 <= ord(ch) <= 126)
 
     if not api_key:
         raise RuntimeError("mms.txt está vacío o no contiene una API key válida.")
@@ -988,24 +946,24 @@ IMPORTANTE:
   pequeños apartados si ayudan a la lectura.
 
 DATOS DEL EXPEDIENTE:
-Nombre: {texto_api_seguro(resultado["nombre"])}
-Edad actual: {texto_api_seguro(resultado["edad"])}
-Sexo: {texto_api_seguro(resultado["sexo"])}
-Ocupación: {texto_api_seguro(resultado["ocupacion"])}
-Transporte: {texto_api_seguro(resultado["transporte"])}
-Horario: {texto_api_seguro(resultado["horario"])}
-Visibilidad: {texto_api_seguro(resultado["visibilidad"])}
-Entorno: {texto_api_seguro(resultado["entorno"])}
-Clima: {texto_api_seguro(resultado["clima"])}
-Sueño: {texto_api_seguro(resultado["sueño"])}
-Fatiga: {texto_api_seguro(resultado["fatiga"])}
-Atención: {texto_api_seguro(resultado["atencion"])}
-Lugar habitual: {texto_api_seguro(resultado["lugar_frecuente"])}
-Lugar: {texto_api_seguro(resultado["lugar"])}
-Escenario principal: {texto_api_seguro(resultado["escenario"])}
-Causa narrativa: {texto_api_seguro(resultado["causa"])}
-Miedo principal: {texto_api_seguro(resultado["miedo"])}
-Segundo miedo: {texto_api_seguro(resultado["segundo_miedo"])}
+Nombre: {resultado["nombre"]}
+Edad actual: {resultado["edad"]}
+Sexo: {resultado["sexo"]}
+Ocupación: {resultado["ocupacion"]}
+Transporte: {resultado["transporte"]}
+Horario: {resultado["horario"]}
+Visibilidad: {resultado["visibilidad"]}
+Entorno: {resultado["entorno"]}
+Clima: {resultado["clima"]}
+Sueño: {resultado["sueño"]}
+Fatiga: {resultado["fatiga"]}
+Atención: {resultado["atencion"]}
+Lugar habitual: {resultado["lugar_frecuente"]}
+Lugar: {resultado["lugar"]}
+Escenario principal: {resultado["escenario"]}
+Causa narrativa: {resultado["causa"]}
+Miedo principal: {resultado["miedo"]}
+Segundo miedo: {resultado["segundo_miedo"]}
 
 Escribe una reconstrucción de aproximadamente 700 a 1000 palabras.
 El tono debe parecer un expediente secreto del "Más Allá", oscuro,
@@ -1031,8 +989,10 @@ serio y cinematográfico, pero claramente ficticio.
             ],
             "stream": False,
             "max_tokens": 1800,
-            "thinking": {"type": "enabled"},
-            "reasoning_effort": "high",
+            # Usamos modo no-thinking para esta narracion. Reduce la
+            # complejidad de la solicitud y evita incompatibilidades entre
+            # modelos/versiones de la API.
+            "thinking": {"type": "disabled"},
         }
 
         # UTF-8 explícito. Esto evita el error:
@@ -1045,22 +1005,34 @@ serio y cinematográfico, pero claramente ficticio.
             payload,
             ensure_ascii=True,
             separators=(",", ":"),
-        ).encode("utf-8")
+        ).encode("ascii")
 
         request = urllib.request.Request(
             "https://api.deepseek.com/chat/completions",
             data=cuerpo,
             headers={
                 "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json; charset=utf-8",
+                "Content-Type": "application/json",
                 "Accept": "application/json",
-                "User-Agent": "HastaAquiLlegaste/1.0",
+                "User-Agent": "Mozilla/5.0 HastaAquiLlegaste/1.1",
             },
             method="POST",
         )
 
-        with urllib.request.urlopen(request, timeout=120) as response:
-            respuesta_bytes = response.read()
+        # Algunos proxies/CDN pueden devolver 494 de forma transitoria.
+        # Reintentamos una vez sin modificar el contenido de la solicitud.
+        ultimo_error = None
+        for intento in range(2):
+            try:
+                with urllib.request.urlopen(request, timeout=120) as response:
+                    respuesta_bytes = response.read()
+                break
+            except urllib.error.HTTPError as exc:
+                ultimo_error = exc
+                if exc.code != 494 or intento == 1:
+                    raise
+        else:
+            raise ultimo_error
 
         respuesta_json = json.loads(respuesta_bytes.decode("utf-8"))
 
@@ -1087,6 +1059,15 @@ serio y cinematográfico, pero claramente ficticio.
             detalle = exc.read().decode("utf-8", errors="replace")
         except Exception:
             detalle = str(exc)
+
+        if exc.code == 494:
+            return None, (
+                "DeepSeek no pudo aceptar la conexión (HTTP 494 / CloudFront).\n"
+                "La solicitud llegó al servidor/CDN, pero fue rechazada antes de procesarse.\n"
+                "Se corrigió la llamada para usar el modelo DeepSeek actual y una petición HTTP más compatible.\n"
+                f"Detalle del servidor: {detalle}"
+            )
+
         return None, (
             "DeepSeek rechazó la solicitud.\n"
             f"HTTP {exc.code}: {detalle}"
@@ -1966,7 +1947,7 @@ if st.session_state.resultado_generado and st.session_state.resultado:
             data=st.session_state.audio_generado,
             file_name=(
                 f"Sentencia_Ultratumba_"
-                f"{texto_pdf_seguro(r['nombre']).replace(' ', '_')}.wav"
+                f"{r['nombre'].replace(' ', '_')}.wav"
             ),
             mime="audio/wav",
             use_container_width=True,
@@ -2192,7 +2173,7 @@ if st.session_state.resultado_generado and st.session_state.resultado:
         story.append(
             Paragraph(
                 f"<font size=7 color='#666666'>"
-                f"||{r['folio']}||{texto_pdf_seguro(r['nombre'])}||{r['muerte']}||"
+                f"||{r['folio']}||{r['nombre']}||{r['muerte']}||"
                 f"{sum(ord(c) for c in r['folio'])}"
                 f"#PARCAS_AUTENTICACION||</font>",
                 ss
@@ -2227,26 +2208,19 @@ if st.session_state.resultado_generado and st.session_state.resultado:
             style=[("PADDING", (0, 0), (-1, -1), 2)]
         ))
 
-        try:
-            doc.build(
-                story,
-                onFirstPage=marco,
-                onLaterPages=marco
-            )
-            st.session_state.pdf_generado = buffer.getvalue()
-        except UnicodeError as exc:
-            st.session_state.pdf_generado = None
-            st.error(
-                "No se pudo construir el PDF por un carácter Unicode incompatible. "
-                "El texto web y la reconstrucción de DeepSeek siguen funcionando. "
-                f"Detalle técnico: {type(exc).__name__}: {exc}"
-            )
+        doc.build(
+            story,
+            onFirstPage=marco,
+            onLaterPages=marco
+        )
+
+        st.session_state.pdf_generado = buffer.getvalue()
 
     st.download_button(
         "⚖️ DESCARGAR ACTA DE DEFUNCIÓN",
         data=st.session_state.pdf_generado,
         file_name=(
-            f"Acta_Defuncion_{texto_pdf_seguro(r['nombre']).replace(' ', '_')}.pdf"
+            f"Acta_Defuncion_{r['nombre'].replace(' ', '_')}.pdf"
         ),
         mime="application/pdf",
         use_container_width=True,
