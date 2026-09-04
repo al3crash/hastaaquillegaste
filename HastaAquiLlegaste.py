@@ -40,7 +40,7 @@ PAYPAL_URL = "https://www.paypal.com/ncp/payment/HAALKPRK6DT8G"
 #
 # Coloca aquí la URL RAW de tu archivo mms.txt:
 # https://raw.githubusercontent.com/TU_USUARIO/TU_REPOSITORIO/main/mms.txt
-DEEPSEEK_API_KEY_URL = "https://github.com/al3crash/hastaaquillegaste/blob/main/mms.txt"
+DEEPSEEK_API_KEY_URL = "https://raw.githubusercontent.com/TU_USUARIO/TU_REPOSITORIO/main/mms.txt"
 
 # Modelo que utilizará "MI MUERTE MÁS DETALLADA".
 # DeepSeek ofrece compatibilidad con el formato de OpenAI.
@@ -908,9 +908,8 @@ def generar_muerte_detallada_con_ia(resultado):
     """
     Genera la reconstrucción detallada usando DeepSeek.
 
-    La API key se obtiene desde mms.txt mediante DEEPSEEK_API_KEY_URL.
-    Se usa HTTP directo para evitar problemas de compatibilidad del SDK
-    y errores de codificación ASCII/UTF-8.
+    Esta versión fuerza UTF-8 de extremo a extremo y evita que el
+    contenido narrativo pase por una codificación Latin-1.
     """
     import urllib.request
     import urllib.error
@@ -989,21 +988,16 @@ serio y cinematográfico, pero claramente ficticio.
             ],
             "stream": False,
             "max_tokens": 1800,
-            "thinking": {"type": "enabled"},
-            "reasoning_effort": "high",
         }
 
-        # UTF-8 explícito. Esto evita el error:
-        # UnicodeEncodeError: 'ascii' codec can't encode character ...
-        # ASCII seguro dentro del JSON HTTP.
-        # DeepSeek recibe el contenido correctamente y evitamos que
-        # ninguna capa intermedia intente codificar comillas tipográficas,
-        # guiones largos, emojis u otros caracteres Unicode como Latin-1.
+        # IMPORTANTE:
+        # json.dumps crea texto Unicode y encode("utf-8") lo convierte
+        # directamente a bytes UTF-8. No usar latin-1 aquí.
         cuerpo = json.dumps(
             payload,
-            ensure_ascii=True,
+            ensure_ascii=False,
             separators=(",", ":"),
-        ).encode("ascii")
+        ).encode("utf-8")
 
         request = urllib.request.Request(
             "https://api.deepseek.com/chat/completions",
@@ -1020,9 +1014,10 @@ serio y cinematográfico, pero claramente ficticio.
         with urllib.request.urlopen(request, timeout=120) as response:
             respuesta_bytes = response.read()
 
-        respuesta_json = json.loads(respuesta_bytes.decode("utf-8"))
+        respuesta_json = json.loads(
+            respuesta_bytes.decode("utf-8", errors="replace")
+        )
 
-        # DeepSeek devuelve el texto en choices[0].message.content
         texto = (
             respuesta_json.get("choices", [{}])[0]
             .get("message", {})
@@ -1035,8 +1030,6 @@ serio y cinematográfico, pero claramente ficticio.
                 return None, f"DeepSeek devolvió un error: {error_api}"
             return None, "DeepSeek respondió, pero no devolvió texto."
 
-        # Normaliza el texto recibido a Unicode UTF-8 en memoria.
-        # No se hace ningún encode Latin-1 del contenido generado.
         texto = str(texto).replace("\r\n", "\n").replace("\r", "\n")
         return texto.strip(), None
 
@@ -1056,9 +1049,15 @@ serio y cinematográfico, pero claramente ficticio.
             f"{type(exc).__name__}: {exc}"
         )
 
-    except UnicodeError as exc:
+    except UnicodeEncodeError as exc:
         return None, (
-            "Se produjo un problema de codificación de texto.\n"
+            "ERROR DE CODIFICACIÓN UTF-8 EN LA SOLICITUD.\n"
+            f"{type(exc).__name__}: {exc}"
+        )
+
+    except UnicodeDecodeError as exc:
+        return None, (
+            "ERROR DE DECODIFICACIÓN UTF-8 EN LA RESPUESTA.\n"
             f"{type(exc).__name__}: {exc}"
         )
 
