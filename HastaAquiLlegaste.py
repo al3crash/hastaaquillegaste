@@ -900,26 +900,23 @@ def obtener_api_key():
 
 
 def generar_muerte_detallada_con_ia(resultado):
+    """
+    Genera la reconstrucción detallada usando DeepSeek.
+
+    La API key se obtiene desde mms.txt mediante DEEPSEEK_API_KEY_URL.
+    Se usa HTTP directo para evitar problemas de compatibilidad del SDK
+    y errores de codificación ASCII/UTF-8.
+    """
+    import urllib.request
+    import urllib.error
+    import json
+
     try:
         api_key = obtener_api_key()
     except Exception as exc:
         return None, str(exc)
 
     try:
-        from openai import OpenAI
-    except ImportError:
-        return None, (
-            "No está instalada la librería 'openai'. "
-            "Agrega 'openai' a requirements.txt y vuelve a desplegar."
-        )
-
-    try:
-        # DeepSeek utiliza una API compatible con el SDK de OpenAI.
-        cliente = OpenAI(
-            api_key=api_key,
-            base_url="https://api.deepseek.com"
-        )
-
         prompt = f"""
 Eres el narrador ficticio de un expediente paranormal llamado
 "HASTA AQUÍ LLEGASTE". Debes escribir una reconstrucción narrativa
@@ -937,7 +934,7 @@ IMPORTANTE:
 - Mantén la narración en español.
 - Usa segunda persona.
 - Hazla bastante más detallada que la sentencia normal.
-- Incluye: ambiente, momento del día, señales previas, desarrollo del
+- Incluye ambiente, momento del día, señales previas, desarrollo del
   incidente, instante decisivo, reacción del entorno y cierre del expediente.
 - No menciones que eres una IA.
 - No uses encabezados excesivos. Puede ser una narración continua con
@@ -968,9 +965,9 @@ El tono debe parecer un expediente secreto del "Más Allá", oscuro,
 serio y cinematográfico, pero claramente ficticio.
 """
 
-        respuesta = cliente.chat.completions.create(
-            model="deepseek-v4-pro",
-            messages=[
+        payload = {
+            "model": DEEPSEEK_MODEL,
+            "messages": [
                 {
                     "role": "system",
                     "content": (
@@ -985,110 +982,73 @@ serio y cinematográfico, pero claramente ficticio.
                     "content": prompt,
                 },
             ],
-            stream=False,
-            max_tokens=1800,
-            reasoning_effort="high",
-            extra_body={"thinking": {"type": "enabled"}},
+            "stream": False,
+            "max_tokens": 1800,
+            "thinking": {"type": "enabled"},
+            "reasoning_effort": "high",
+        }
+
+        # UTF-8 explícito. Esto evita el error:
+        # UnicodeEncodeError: 'ascii' codec can't encode character ...
+        cuerpo = json.dumps(
+            payload,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ).encode("utf-8")
+
+        request = urllib.request.Request(
+            "https://api.deepseek.com/chat/completions",
+            data=cuerpo,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json; charset=utf-8",
+                "Accept": "application/json",
+                "User-Agent": "HastaAquiLlegaste/1.0",
+            },
+            method="POST",
         )
 
-        texto = respuesta.choices[0].message.content
+        with urllib.request.urlopen(request, timeout=120) as response:
+            respuesta_bytes = response.read()
+
+        respuesta_json = json.loads(respuesta_bytes.decode("utf-8"))
+
+        # DeepSeek devuelve el texto en choices[0].message.content
+        texto = (
+            respuesta_json.get("choices", [{}])[0]
+            .get("message", {})
+            .get("content")
+        )
 
         if not texto:
+            error_api = respuesta_json.get("error")
+            if error_api:
+                return None, f"DeepSeek devolvió un error: {error_api}"
             return None, "DeepSeek respondió, pero no devolvió texto."
 
         return texto.strip(), None
 
-    except Exception as exc:
+    except urllib.error.HTTPError as exc:
+        try:
+            detalle = exc.read().decode("utf-8", errors="replace")
+        except Exception:
+            detalle = str(exc)
         return None, (
-            f"No fue posible consultar la API de DeepSeek.\n"
+            "DeepSeek rechazó la solicitud.\n"
+            f"HTTP {exc.code}: {detalle}"
+        )
+
+    except urllib.error.URLError as exc:
+        return None, (
+            "No fue posible conectar con la API de DeepSeek.\n"
             f"{type(exc).__name__}: {exc}"
         )
 
-
-def generar_muerte_detallada_con_ia(resultado):
-    try:
-        api_key = obtener_api_key()
-    except Exception as exc:
-        return None, str(exc)
-
-    try:
-        from openai import OpenAI
-    except ImportError:
+    except UnicodeError as exc:
         return None, (
-            "No está instalada la librería oficial de OpenAI. "
-            "Agrega 'openai' a requirements.txt y vuelve a desplegar."
+            "Se produjo un problema de codificación de texto.\n"
+            f"{type(exc).__name__}: {exc}"
         )
-
-    try:
-        cliente = OpenAI(api_key=api_key)
-
-        prompt = f"""
-Eres el narrador ficticio de un expediente paranormal llamado
-"HASTA AQUÍ LLEGASTE". Debes escribir una reconstrucción narrativa
-oscura, cinematográfica y perturbadora basada exclusivamente en los
-datos proporcionados.
-
-IMPORTANTE:
-- Esto es ficción y entretenimiento.
-- NO presentes el texto como una predicción real.
-- NO afirmes que puedes saber cuándo o cómo morirá realmente una persona.
-- No uses gore explícito ni describas mutilaciones.
-- No des instrucciones peligrosas.
-- No inventes datos médicos reales.
-- No cambies la causa principal del expediente.
-- Mantén la narración en español.
-- Usa segunda persona.
-- Hazla bastante más detallada que la sentencia normal.
-- Incluye: ambiente, momento del día, señales previas, desarrollo del
-  incidente, instante decisivo, reacción del entorno y cierre del expediente.
-- No menciones que eres una IA.
-- No uses encabezados excesivos. Puede ser una narración continua con
-  pequeños apartados si ayudan a la lectura.
-
-DATOS DEL EXPEDIENTE:
-Nombre: {resultado["nombre"]}
-Edad actual: {resultado["edad"]}
-Sexo: {resultado["sexo"]}
-Ocupación: {resultado["ocupacion"]}
-Transporte: {resultado["transporte"]}
-Horario: {resultado["horario"]}
-Visibilidad: {resultado["visibilidad"]}
-Entorno: {resultado["entorno"]}
-Clima: {resultado["clima"]}
-Sueño: {resultado["sueño"]}
-Fatiga: {resultado["fatiga"]}
-Atención: {resultado["atencion"]}
-Lugar habitual: {resultado["lugar_frecuente"]}
-Lugar: {resultado["lugar"]}
-Escenario principal: {resultado["escenario"]}
-Causa narrativa: {resultado["causa"]}
-Miedo principal: {resultado["miedo"]}
-Segundo miedo: {resultado["segundo_miedo"]}
-
-Escribe una reconstrucción de aproximadamente 700 a 1000 palabras.
-El tono debe parecer un expediente secreto del "Más Allá", oscuro,
-serio y cinematográfico, pero claramente ficticio.
-"""
-
-        respuesta = cliente.responses.create(
-            model="deepseek-v4-flash",
-            instructions=(
-                "Escribe una narración de ficción paranormal en español. "
-                "No hagas predicciones reales de muerte. "
-                "No uses gore explícito. "
-                "Mantén el texto inmersivo y coherente con los datos."
-            ),
-            input=prompt,
-            max_output_tokens=1800,
-            store=False,
-        )
-
-        texto = getattr(respuesta, "output_text", None)
-
-        if not texto:
-            return None, "La API respondió, pero no devolvió texto."
-
-        return texto.strip(), None
 
     except Exception as exc:
         return None, (
