@@ -44,7 +44,7 @@ DEEPSEEK_API_KEY_URL = "https://github.com/al3crash/hastaaquillegaste/blob/main/
 
 # Modelo que utilizará "MI MUERTE MÁS DETALLADA".
 # DeepSeek ofrece compatibilidad con el formato de OpenAI.
-DEEPSEEK_MODEL = "deepseek-v4-pro"
+DEEPSEEK_MODEL = "deepseek-chat"
 
 
 for key, default in {
@@ -292,6 +292,11 @@ p, label {
 
 def elegir(lista, rng):
     return lista[rng.randrange(len(lista))]
+
+
+def texto_pdf_seguro(texto):
+    """Convierte texto a la codificación que soporta Helvetica de ReportLab."""
+    return str(texto).encode("latin-1", errors="replace").decode("latin-1")
 
 
 def generar_semilla(*valores):
@@ -990,11 +995,15 @@ serio y cinematográfico, pero claramente ficticio.
 
         # UTF-8 explícito. Esto evita el error:
         # UnicodeEncodeError: 'ascii' codec can't encode character ...
+        # ASCII seguro dentro del JSON HTTP.
+        # DeepSeek recibe el contenido correctamente y evitamos que
+        # ninguna capa intermedia intente codificar comillas tipográficas,
+        # guiones largos, emojis u otros caracteres Unicode como Latin-1.
         cuerpo = json.dumps(
             payload,
-            ensure_ascii=False,
+            ensure_ascii=True,
             separators=(",", ":"),
-        ).encode("utf-8")
+        ).encode("ascii")
 
         request = urllib.request.Request(
             "https://api.deepseek.com/chat/completions",
@@ -1026,6 +1035,9 @@ serio y cinematográfico, pero claramente ficticio.
                 return None, f"DeepSeek devolvió un error: {error_api}"
             return None, "DeepSeek respondió, pero no devolvió texto."
 
+        # Normaliza el texto recibido a Unicode UTF-8 en memoria.
+        # No se hace ningún encode Latin-1 del contenido generado.
+        texto = str(texto).replace("\r\n", "\n").replace("\r", "\n")
         return texto.strip(), None
 
     except urllib.error.HTTPError as exc:
@@ -1794,10 +1806,10 @@ if st.session_state.resultado_generado and st.session_state.resultado:
     st.markdown(f"""
     <div class="resultado-profundo">
       <b>EXPEDIENTE:</b> {html.escape(r['folio'])}<br>
-      <b>ESTADO DEL VELO:</b> {html.escape(r['nivel'])}<br>
+      <b>ESTADO DEL VELO:</b> {html.escape(texto_pdf_seguro(r['nivel']))}<br>
       <b>ÍNDICE NARRATIVO:</b> {r['riesgo']} / 100<br>
-      <b>ESCENARIO:</b> {html.escape(r['escenario'])}<br>
-      <b>ENTORNO:</b> {html.escape(r['lugar'])}<br>
+      <b>ESCENARIO:</b> {html.escape(texto_pdf_seguro(r['escenario']))}<br>
+      <b>ENTORNO:</b> {html.escape(texto_pdf_seguro(r['lugar']))}<br>
       <b>EDAD ACTUAL:</b> {r['edad']} años<br>
       <b>EDAD AL FALLECER:</b> {r['edad_muerte']} años<br>
       <b>FECHA DEL REGISTRO:</b> {r['fecha_registro']}
@@ -2060,17 +2072,17 @@ if st.session_state.resultado_generado and st.session_state.resultado:
         story.append(Table(
             [
                 [Paragraph("NOMBRE COMPLETO:", campo),
-                 Paragraph(html.escape(r['nombre']), val)],
+                 Paragraph(html.escape(texto_pdf_seguro(r['nombre'])), val)],
                 [Paragraph("SEXO:", campo),
-                 Paragraph(html.escape(r['sexo']), val)],
+                 Paragraph(html.escape(texto_pdf_seguro(r['sexo'])), val)],
                 [Paragraph("FECHA DE NACIMIENTO:", campo),
                  Paragraph(r['nacimiento'], val)],
                 [Paragraph("ESTADO CIVIL:", campo),
-                 Paragraph(html.escape(r['estado']), val)],
+                 Paragraph(html.escape(texto_pdf_seguro(r['estado'])), val)],
                 [Paragraph("ACTIVIDAD:", campo),
-                 Paragraph(html.escape(r['ocupacion']), val)],
+                 Paragraph(html.escape(texto_pdf_seguro(r['ocupacion'])), val)],
                 [Paragraph("NIVEL DEL VELO:", campo),
-                 Paragraph(html.escape(r['nivel']), val)],
+                 Paragraph(html.escape(texto_pdf_seguro(r['nivel'])), val)],
                 [Paragraph("EDAD AL FALLECER:", campo),
                  Paragraph(f"{r['edad_muerte']} años", val)]
             ],
@@ -2093,11 +2105,11 @@ if st.session_state.resultado_generado and st.session_state.resultado:
                 [Paragraph("EDAD AL FALLECER:", campo),
                  Paragraph(f"{r['edad_muerte']} años", val)],
                 [Paragraph("ESCENARIO:", campo),
-                 Paragraph(html.escape(r['escenario']), val)],
+                 Paragraph(html.escape(texto_pdf_seguro(r['escenario'])), val)],
                 [Paragraph("LUGAR:", campo),
-                 Paragraph(html.escape(r['lugar']), val)],
+                 Paragraph(html.escape(texto_pdf_seguro(r['lugar'])), val)],
                 [Paragraph("CAUSA:", campo),
-                 Paragraph(html.escape(r['causa']), causa)]
+                 Paragraph(html.escape(texto_pdf_seguro(r['causa'])), causa)]
             ],
             colWidths=[150, 370],
             style=[
@@ -2114,7 +2126,7 @@ if st.session_state.resultado_generado and st.session_state.resultado:
         story.append(Spacer(1, 6))
         story.append(
             Paragraph(
-                html.escape(r['descripcion'] + " " + r['detalle']),
+                html.escape(texto_pdf_seguro(r['descripcion'] + " " + r['detalle'])),
                 val
             )
         )
@@ -2124,7 +2136,7 @@ if st.session_state.resultado_generado and st.session_state.resultado:
         story.append(Spacer(1, 5))
         story.append(
             Paragraph(
-                f'<i>"{html.escape(r["dedicatoria"])}"</i>',
+                f'<i>"{html.escape(texto_pdf_seguro(r["dedicatoria"]))}"</i>',
                 val
             )
         )
@@ -2196,7 +2208,7 @@ if st.session_state.resultado_generado and st.session_state.resultado:
     st.markdown(f"""
     <div class="lectura-final">
       👁️<br><br>
-      Hasta aquí llegaste, {html.escape(r['nombre'])}.<br>
+      Hasta aquí llegaste, {html.escape(texto_pdf_seguro(r['nombre']))}.<br>
       El expediente <b>{html.escape(r['folio'])}</b> ha sido cerrado.<br><br>
       <span style="color:#777785;">Algunas puertas se abren una sola vez.</span>
     </div>
