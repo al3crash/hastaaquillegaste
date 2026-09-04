@@ -27,8 +27,9 @@ st.set_page_config(
 # CONFIGURACIÓN PÚBLICA
 # ============================================================
 # Cambia estos valores si quieres usar otro contador o tu enlace de PayPal.
-COUNTER_ID = "alex-ultratumba"
-PAYPAL_URL = "https://www.paypal.me/TU_USUARIO"
+
+
+PAYPAL_URL = "https://www.paypal.com/ncp/payment/HAALKPRK6DT8G"
 
 # ============================================================
 # ESTADO PERSISTENTE
@@ -329,9 +330,9 @@ def generar_voz_ultratumba(texto):
         comando_tts = [
             edge_tts_bin,
             "--voice", "es-MX-JorgeNeural",
-            "--rate=-18%",
-            "--volume=-4%",
-            "--pitch=-5Hz",
+            "--rate=-55%",
+            "--volume=-3%",
+            "--pitch=-83Hz",
             "--text", texto,
             "--write-media", mp3_path,
         ]
@@ -1444,8 +1445,7 @@ if st.session_state.resultado_generado and st.session_state.resultado:
             <source src="data:audio/wav;base64,{audio_b64}" type="audio/wav">
           </audio>
           <div style="color:#777785;font-size:10px;margin-top:10px;">
-            Voz masculina grave con reverberación suave.
-          </div>
+                  </div>
         </div>
 
         <script>
@@ -1795,7 +1795,7 @@ st.markdown(
 )
 
 # Cambia únicamente esta dirección por tu enlace real de PayPal.
-PAYPAL_URL = "https://www.paypal.me/TU_USUARIO"
+PAYPAL_URL = "https://www.paypal.com/ncp/payment/HAALKPRK6DT8G"
 
 st.markdown(
     f"""
