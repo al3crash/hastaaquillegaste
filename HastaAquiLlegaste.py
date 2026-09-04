@@ -28,890 +28,78 @@ st.set_page_config(
 PAYPAL_URL = "https://www.paypal.com/ncp/payment/HAALKPRK6DT8G"
 
 # ============================================================
-# DEEPSEEK
+# GEMINI API
 # ============================================================
-# La aplicación NO le pide la API key al usuario.
-# Lee automáticamente la clave desde mms.txt mediante una URL RAW.
+# La aplicación utiliza exclusivamente Google Gemini para generar
+# "MI MUERTE MÁS DETALLADA".
 #
-# IMPORTANTE:
-# No hagas público mms.txt. Una API key expuesta puede ser copiada
-# y utilizada por terceros. Para producción, es preferible usar
-# st.secrets o una variable de entorno.
+# La clave se busca en este orden:
+#   1) st.secrets["GEMINI_API_KEY"]   <- recomendado para Streamlit Cloud
+#   2) variable de entorno GEMINI_API_KEY
+#   3) archivo mms.txt mediante una URL RAW de GitHub
 #
-# Coloca aquí la URL RAW de tu archivo mms.txt:
-# https://raw.githubusercontent.com/TU_USUARIO/TU_REPOSITORIO/main/mms.txt
-DEEPSEEK_API_KEY_URL = "https://github.com/al3crash/hastaaquillegaste/blob/main/mms.txt"
-
-# Modelo que utilizará "MI MUERTE MÁS DETALLADA".
-# DeepSeek ofrece compatibilidad con el formato de OpenAI.
-DEEPSEEK_MODEL = "deepseek-v4-flash"
-
-
-for key, default in {
-    "ritual_iniciado": False,
-    "resultado_generado": False,
-    "resultado": None,
-    "audio_generado": None,
-    "audio_error": None,
-    "pdf_generado": None,
-    "folio": None,
-    "ia_detalle": None,
-    "ia_error": None,
-}.items():
-    if key not in st.session_state:
-        st.session_state[key] = default
-
-
-def limpiar_todo():
-    widget_keys = [
-        "campo_nombre", "campo_sexo", "campo_fecha", "campo_estado",
-        "campo_dependientes", "campo_ocupacion", "campo_piso",
-        "campo_transporte", "campo_tiempo", "campo_horario",
-        "campo_entorno", "campo_sismos", "campo_clima", "campo_actividad",
-        "campo_extremos", "campo_sueno", "campo_fatiga", "campo_tabaco",
-        "campo_alcohol", "campo_sustancias", "campo_vivienda",
-        "campo_escaleras", "campo_agua", "campo_maquinaria",
-        "campo_cansado", "campo_objetos", "campo_visibilidad",
-        "campo_atencion", "campo_lugar", "campo_creencias",
-        "campo_terror", "campo_reliquias", "campo_temor",
-        "campo_segundo_temor",
-    ]
-
-    for key in widget_keys:
-        st.session_state.pop(key, None)
-
-    st.session_state.ritual_iniciado = False
-    st.session_state.resultado_generado = False
-    st.session_state.resultado = None
-    st.session_state.audio_generado = None
-    st.session_state.audio_error = None
-    st.session_state.pdf_generado = None
-    st.session_state.folio = None
-    st.session_state.ia_detalle = None
-    st.session_state.ia_error = None
-
-
-# ============================================================
-# ESTILOS
-# ============================================================
-st.markdown("""
-<style>
-[data-testid="stAppViewContainer"] {
-    background: radial-gradient(circle at 50% 42%, #17051f 0%, #07020a 44%, #010102 100%);
-    min-height: 100vh;
-}
-[data-testid="stHeader"] { background: rgba(0,0,0,0); }
-[data-testid="stToolbar"] { visibility: hidden; }
-.block-container { max-width: 780px; padding-top: 1.5rem; padding-bottom: 4rem; }
-
-h1 {
-    color: #00ff66 !important;
-    text-align: center;
-    font-family: Georgia, serif;
-    font-weight: bold;
-    letter-spacing: 4px;
-    text-shadow: 0 0 8px #00ff66, 0 0 22px #1b4d3e, 0 0 45px #3d0066;
-}
-h2, h3 {
-    color: #9d4edd !important;
-    text-align: center;
-    font-family: "Courier New", monospace;
-    letter-spacing: 2px;
-}
-p, label {
-    color: #b5b5c3 !important;
-    font-family: "Courier New", monospace;
-    font-size: 13px;
-}
-.stTextInput input, .stNumberInput input, .stSelectbox input {
-    background-color: #090810 !important;
-    color: #00ff66 !important;
-}
-.stButton > button, .stFormSubmitButton > button, .stDownloadButton > button {
-    background-color: #1a0033;
-    color: #00ff66 !important;
-    font-weight: bold;
-    font-family: Georgia, serif;
-    border: 2px solid #00ff66;
-    padding: 14px;
-    font-size: 15px;
-    letter-spacing: 2px;
-    transition: all .3s ease;
-    width: 100%;
-    min-height: 52px;
-}
-.stButton > button:hover, .stFormSubmitButton > button:hover, .stDownloadButton > button:hover {
-    background-color: #00ff66;
-    color: #020204 !important;
-    box-shadow: 0 0 30px #00ff66;
-}
-.contenedor-centrado { display:flex; justify-content:center; width:100%; padding:35px 0; }
-
-.lapida-canvas {
-    background: radial-gradient(circle at 50% 20%, #35343a 0%, #18171c 45%, #0c0b0f 100%);
-    border: 5px double #00ff66;
-    border-radius: 180px 180px 25px 25px;
-    padding: 55px 28px 40px 28px;
-    color: #c1c1cb;
-    text-align:center;
-    font-family:Georgia,serif;
-    box-shadow:0 20px 50px rgba(0,0,0,.95),0 0 35px rgba(0,255,102,.10);
-    width:min(470px,90vw);
-    margin:20px auto;
-    border-bottom:20px solid #080709;
-    box-sizing:border-box;
-    animation:aparecerLapida 1.4s ease;
-}
-@keyframes aparecerLapida {
-    from { opacity:0; transform:translateY(25px) scale(.96); filter:brightness(0); }
-    to { opacity:1; transform:translateY(0) scale(1); filter:brightness(1); }
-}
-.lapida-rip { font-size:clamp(30px,8vw,40px); font-weight:bold; color:#020204; letter-spacing:6px; margin-bottom:8px; text-shadow:0 1px 0 #666; }
-.lapida-nombre { font-size:clamp(18px,5vw,25px); font-weight:bold; color:#fff; text-transform:uppercase; letter-spacing:2px; overflow-wrap:anywhere; }
-.lapida-fechas { font-size:13px; color:#00ff66; font-style:italic; margin-bottom:22px; border-bottom:1px double #3d0066; padding-bottom:12px; }
-.lapida-causa { font-size:13px; color:#e2e2e9; line-height:1.6; text-align:justify; margin-bottom:25px; background:rgba(5,2,10,.72); padding:14px; border-top:1px solid #3d0066; border-bottom:1px solid #3d0066; }
-.lapida-dedicatoria { font-size:12px; color:#777785; font-style:italic; line-height:1.4; }
-
-.oraculo-box {
-    text-align:center;
-    background:radial-gradient(circle at 50% 0%,#21102e 0%,#110b1a 65%);
-    padding:18px;
-    border:1px solid #9d4edd;
-    border-radius:8px;
-    width:min(560px,94vw);
-    margin:0 auto 20px;
-    box-sizing:border-box;
-    box-shadow:0 0 25px rgba(123,44,191,.15);
-}
-.oraculo-status { color:#00ff66 !important; font-family:monospace; font-size:12px; margin-bottom:12px; }
-.nota-voz { color:#777785 !important; font-family:monospace; font-size:10px; margin-top:10px; }
-.resultado-profundo {
-    background:rgba(4,2,7,.82);
-    border:1px solid #3d0066;
-    border-radius:8px;
-    padding:18px;
-    margin:18px auto;
-    color:#c9c9d4;
-    font-family:"Courier New",monospace;
-    font-size:12px;
-    line-height:1.7;
-    box-shadow:inset 0 0 25px rgba(61,0,102,.12);
-}
-.lectura-final {
-    color:#00ff66 !important;
-    text-align:center;
-    font-family:Georgia,serif;
-    font-size:17px;
-    letter-spacing:1px;
-    line-height:1.7;
-    padding:18px;
-}
-.error-voz {
-    color:#ff6b6b;
-    font-family:monospace;
-    font-size:11px;
-    text-align:left;
-    margin-top:10px;
-    white-space:pre-wrap;
-}
-.contador-visitas {
-    text-align:center;
-    margin:28px auto 8px;
-    color:#777785;
-    font-family:"Courier New",monospace;
-    font-size:11px;
-    letter-spacing:1px;
-}
-.apoyar-proyecto {
-    text-align:center;
-    margin:14px auto 10px;
-}
-.apoyar-proyecto a {
-    display:inline-block;
-    background:#1a0033;
-    color:#00ff66 !important;
-    border:1px solid #00ff66;
-    border-radius:5px;
-    padding:11px 22px;
-    text-decoration:none !important;
-    font-family:Georgia,serif;
-    font-weight:bold;
-    letter-spacing:1.5px;
-    box-shadow:0 0 12px rgba(0,255,102,.10);
-    transition:all .25s ease;
-}
-.apoyar-proyecto a:hover {
-    background:#00ff66;
-    color:#020204 !important;
-    box-shadow:0 0 24px rgba(0,255,102,.45);
-}
-.footer-alex {
-    text-align:center;
-    color:#555564;
-    font-family:"Courier New",monospace;
-    font-size:10px;
-    letter-spacing:2px;
-    margin-top:26px;
-    padding-top:16px;
-    border-top:1px solid #21102e;
-}
-.ia-detalle {
-    background:radial-gradient(circle at 50% 0%,#21102e 0%,#09050e 72%);
-    border:1px solid #00ff66;
-    border-radius:8px;
-    padding:20px;
-    margin:18px auto;
-    color:#d6d6df;
-    font-family:"Courier New",monospace;
-    font-size:12px;
-    line-height:1.75;
-    box-shadow:0 0 25px rgba(0,255,102,.08);
-}
-.ia-detalle h4 {
-    color:#00ff66;
-    text-align:center;
-    font-family:Georgia,serif;
-    letter-spacing:2px;
-    margin:0 0 15px;
-}
-.api-aviso {
-    color:#777785 !important;
-    font-size:10px !important;
-    line-height:1.5;
-    text-align:center;
-}
-@media (max-width:600px) {
-    .block-container { padding-left:.7rem; padding-right:.7rem; padding-top:1.2rem; }
-    h1 { font-size:1.7rem !important; letter-spacing:2px; }
-    .stButton > button,.stFormSubmitButton > button,.stDownloadButton > button { font-size:13px; }
-    .lapida-canvas { padding-left:18px; padding-right:18px; }
-}
-</style>
-""", unsafe_allow_html=True)
-
-
-def elegir(lista, rng):
-    return lista[rng.randrange(len(lista))]
-
-
-def texto_pdf_seguro(texto):
-    """Convierte texto a la codificación que soporta Helvetica de ReportLab."""
-    return str(texto).encode("latin-1", errors="replace").decode("latin-1")
-
-
-def generar_semilla(*valores):
-    texto = "|".join(str(v) for v in valores)
-    return int(hashlib.sha256(texto.encode("utf-8")).hexdigest()[:16], 16)
-
-
-def calcular_edad_en_fecha(fecha_nacimiento, fecha_muerte):
-    nacimiento = fecha_nacimiento
-    muerte = fecha_muerte.date()
-    edad = muerte.year - nacimiento.year
-    if (muerte.month, muerte.day) < (nacimiento.month, nacimiento.day):
-        edad -= 1
-    return max(0, edad)
-
-
-def dibujar_codigo_barras(canvas, x, y, semilla):
-    canvas.saveState()
-    rng = random.Random(semilla)
-    ancho_total = 0
-    for _ in range(42):
-        ancho = rng.choice([1, 1.5, 2, 3])
-        espacio = rng.choice([1, 1.5, 2])
-        canvas.setFillColor(colors.black)
-        canvas.rect(x + ancho_total, y, ancho, 40, fill=1, stroke=0)
-        ancho_total += ancho + espacio
-    canvas.restoreState()
-
-
-# ============================================================
-# ALGORITMO NUEVO DE CAUSAS
-# ============================================================
-# En lugar de elegir simplemente un escenario al azar, cada causa
-# recibe puntos según las respuestas. La causa dominante gana.
-# El desempate conserva una pequeña variación narrativa.
+# RECOMENDADO EN STREAMLIT CLOUD:
+# En Settings > Secrets agrega:
+# GEMINI_API_KEY = "TU_CLAVE_DE_GEMINI"
 #
-# IMPORTANTE: el resultado es ficción para el entretenimiento.
-# No representa una predicción médica, estadística ni real de muerte.
-# ============================================================
-def determinar_causa(
-    transporte_principal,
-    tiempo_desplazamiento,
-    horario_mayor_riesgo,
-    entorno_urbano,
-    sismos_zona,
-    clima_exposicion,
-    deportes_extremos,
-    sueño,
-    fatiga,
-    escaleras,
-    agua,
-    maquinaria,
-    conducir_cansado,
-    visibilidad,
-    atencion,
-    lugar_frecuente,
-    lugar_temido,
-    segundo_temor,
-    piso,
-    vivienda,
-    rng,
-):
-    causas = {
-        "ACCIDENTE VEHICULAR": {
-            "puntos": 0,
-            "desc": (
-                "El trayecto comenzó con normalidad. Una maniobra inesperada, "
-                "una distancia demasiado corta y un instante de reacción "
-                "insuficiente transformaron una ruta conocida en una emergencia."
-            ),
-        },
-        "COLISIÓN EN MOTOCICLETA": {
-            "puntos": 0,
-            "desc": (
-                "La motocicleta avanzaba por una ruta habitual. La combinación "
-                "de superficie irregular, tráfico y un margen de reacción reducido "
-                "convirtió un pequeño cambio de trayectoria en el punto decisivo."
-            ),
-        },
-        "MICROSUEÑO AL VOLANTE": {
-            "puntos": 0,
-            "desc": (
-                "La fatiga acumulada pasó inadvertida hasta que la atención "
-                "desapareció durante una fracción de segundo. Cuando regresó, "
-                "la posición del vehículo ya no coincidía con la ruta segura."
-            ),
-        },
-        "CAÍDA EN ESTRUCTURA": {
-            "puntos": 0,
-            "desc": (
-                "Un desnivel, una superficie inestable o un punto de apoyo "
-                "deficiente alteraron una acción cotidiana. La caída ocurrió "
-                "antes de que existiera tiempo suficiente para recuperar el equilibrio."
-            ),
-        },
-        "ACCIDENTE LABORAL": {
-            "puntos": 0,
-            "desc": (
-                "La rutina había convertido el procedimiento en algo automático. "
-                "Una pequeña anomalía pasó inadvertida y una instalación, herramienta "
-                "o mecanismo dejó de comportarse como se esperaba."
-            ),
-        },
-        "INCIDENTE ACUÁTICO": {
-            "puntos": 0,
-            "desc": (
-                "El agua parecía estable desde la distancia. Una corriente, "
-                "un cambio de posición o una pérdida de referencia hizo que "
-                "la distancia hacia un punto seguro fuera mayor de lo previsto."
-            ),
-        },
-        "EVENTO SÍSMICO": {
-            "puntos": 0,
-            "desc": (
-                "La primera vibración fue casi imperceptible. Después, el espacio "
-                "conocido comenzó a responder con violencia y varios objetos "
-                "perdieron sus puntos de apoyo al mismo tiempo."
-            ),
-        },
-        "TORMENTA ELÉCTRICA": {
-            "puntos": 0,
-            "desc": (
-                "La visibilidad cayó rápidamente. Lluvia, viento y descargas "
-                "alteraron el entorno hasta volver difícil distinguir el camino "
-                "seguro de las zonas de peligro."
-            ),
-        },
-        "ACCIDENTE EN ACTIVIDAD EXTREMA": {
-            "puntos": 0,
-            "desc": (
-                "La experiencia había hecho que muchos riesgos parecieran controlables. "
-                "Esta vez una variación mínima apareció justo cuando ya no existía "
-                "espacio suficiente para corregirla."
-            ),
-        },
-        "INCIDENTE EN LUGAR AISLADO": {
-            "puntos": 0,
-            "desc": (
-                "La situación ocurrió lejos de otras personas. La ausencia de "
-                "testigos y la distancia hacia un punto de ayuda hicieron que "
-                "el tiempo se convirtiera en un factor decisivo."
-            ),
-        },
-        "ACCIDENTE EN ALTURA": {
-            "puntos": 0,
-            "desc": (
-                "La rutina se desarrollaba varios niveles por encima del suelo. "
-                "Un punto de apoyo perdió estabilidad y el margen para recuperar "
-                "la posición desapareció demasiado rápido."
-            ),
-        },
-        "INCIDENTE EN ESPACIO CERRADO": {
-            "puntos": 0,
-            "desc": (
-                "El espacio dejó de ser una simple habitación o estructura. "
-                "Una falla inesperada bloqueó la salida y convirtió los minutos "
-                "siguientes en una secuencia de decisiones cada vez más difíciles."
-            ),
-        },
-        "ACCIDENTE IMPREVISTO": {
-            "puntos": 0,
-            "desc": (
-                "El escenario parecía completamente normal. Precisamente por eso "
-                "nadie identificó el peligro hasta que una cadena de pequeños "
-                "acontecimientos ya no pudo detenerse."
-            ),
-        },
-    }
+# Si vas a seguir usando mms.txt, coloca ahí SOLO la clave de Gemini
+# y configura GEMINI_API_KEY_URL con la URL RAW correspondiente.
+GEMINI_API_KEY_URL = "https://github.com/al3crash/hastaaquillegaste/blob/main/mms.txt"
 
-    # ---- Transporte y exposición ----
-    if "Automóvil" in transporte_principal:
-        causas["ACCIDENTE VEHICULAR"]["puntos"] += 30
-    if "Motocicleta" in transporte_principal:
-        causas["COLISIÓN EN MOTOCICLETA"]["puntos"] += 42
-    if "Metro" in transporte_principal or "Tren" in transporte_principal:
-        causas["ACCIDENTE IMPREVISTO"]["puntos"] += 8
-    if "Autobús" in transporte_principal or "Microbús" in transporte_principal:
-        causas["ACCIDENTE VEHICULAR"]["puntos"] += 14
-    if "Avión" in transporte_principal:
-        causas["ACCIDENTE IMPREVISTO"]["puntos"] += 12
-
-    if tiempo_desplazamiento == "2 a 4 horas":
-        causas["ACCIDENTE VEHICULAR"]["puntos"] += 8
-        causas["COLISIÓN EN MOTOCICLETA"]["puntos"] += 8
-    elif tiempo_desplazamiento == "Más de 4 horas":
-        causas["ACCIDENTE VEHICULAR"]["puntos"] += 12
-        causas["COLISIÓN EN MOTOCICLETA"]["puntos"] += 12
-
-    # ---- Horario / visibilidad ----
-    if horario_mayor_riesgo == "Noche":
-        causas["ACCIDENTE VEHICULAR"]["puntos"] += 8
-        causas["COLISIÓN EN MOTOCICLETA"]["puntos"] += 8
-        causas["INCIDENTE EN LUGAR AISLADO"]["puntos"] += 4
-    elif horario_mayor_riesgo == "Madrugada":
-        causas["ACCIDENTE VEHICULAR"]["puntos"] += 12
-        causas["COLISIÓN EN MOTOCICLETA"]["puntos"] += 12
-        causas["MICROSUEÑO AL VOLANTE"]["puntos"] += 10
-        causas["INCIDENTE EN LUGAR AISLADO"]["puntos"] += 5
-
-    if visibilidad == "Variable":
-        causas["ACCIDENTE VEHICULAR"]["puntos"] += 4
-        causas["COLISIÓN EN MOTOCICLETA"]["puntos"] += 4
-    elif visibilidad == "Mala":
-        causas["ACCIDENTE VEHICULAR"]["puntos"] += 9
-        causas["COLISIÓN EN MOTOCICLETA"]["puntos"] += 10
-        causas["TORMENTA ELÉCTRICA"]["puntos"] += 3
-    elif visibilidad == "Muy mala":
-        causas["ACCIDENTE VEHICULAR"]["puntos"] += 13
-        causas["COLISIÓN EN MOTOCICLETA"]["puntos"] += 14
-        causas["TORMENTA ELÉCTRICA"]["puntos"] += 5
-
-    # ---- Cansancio / atención ----
-    if conducir_cansado == "Alguna vez":
-        causas["MICROSUEÑO AL VOLANTE"]["puntos"] += 15
-    elif conducir_cansado == "Frecuentemente":
-        causas["MICROSUEÑO AL VOLANTE"]["puntos"] += 38
-
-    if sueño == "Menos de 4":
-        causas["MICROSUEÑO AL VOLANTE"]["puntos"] += 18
-    elif sueño == "4 a 5":
-        causas["MICROSUEÑO AL VOLANTE"]["puntos"] += 12
-    elif sueño == "5 a 6":
-        causas["MICROSUEÑO AL VOLANTE"]["puntos"] += 5
-
-    if fatiga == "Alto":
-        causas["MICROSUEÑO AL VOLANTE"]["puntos"] += 7
-    elif fatiga == "Agotamiento extremo":
-        causas["MICROSUEÑO AL VOLANTE"]["puntos"] += 16
-
-    if atencion == "Distraído":
-        causas["MICROSUEÑO AL VOLANTE"]["puntos"] += 7
-        causas["ACCIDENTE VEHICULAR"]["puntos"] += 5
-    elif atencion == "Agotado":
-        causas["MICROSUEÑO AL VOLANTE"]["puntos"] += 12
-        causas["ACCIDENTE VEHICULAR"]["puntos"] += 5
-
-    # ---- Entorno físico ----
-    if maquinaria == "A veces":
-        causas["ACCIDENTE LABORAL"]["puntos"] += 10
-    elif maquinaria == "Frecuentemente":
-        causas["ACCIDENTE LABORAL"]["puntos"] += 35
-
-    if escaleras == "A veces":
-        causas["CAÍDA EN ESTRUCTURA"]["puntos"] += 8
-    elif escaleras == "Frecuentemente":
-        causas["CAÍDA EN ESTRUCTURA"]["puntos"] += 25
-
-    if agua == "A veces":
-        causas["INCIDENTE ACUÁTICO"]["puntos"] += 8
-    elif agua == "Frecuentemente":
-        causas["INCIDENTE ACUÁTICO"]["puntos"] += 30
-
-    if piso >= 10:
-        causas["ACCIDENTE EN ALTURA"]["puntos"] += 15
-    if piso >= 20:
-        causas["ACCIDENTE EN ALTURA"]["puntos"] += 20
-
-    if lugar_frecuente == "Edificio alto":
-        causas["ACCIDENTE EN ALTURA"]["puntos"] += 25
-    elif lugar_frecuente == "Obra":
-        causas["ACCIDENTE LABORAL"]["puntos"] += 24
-        causas["CAÍDA EN ESTRUCTURA"]["puntos"] += 12
-    elif lugar_frecuente == "Taller":
-        causas["ACCIDENTE LABORAL"]["puntos"] += 28
-    elif lugar_frecuente == "Carretera":
-        causas["ACCIDENTE VEHICULAR"]["puntos"] += 18
-        causas["COLISIÓN EN MOTOCICLETA"]["puntos"] += 12
-    elif lugar_frecuente == "Estación de transporte":
-        causas["ACCIDENTE IMPREVISTO"]["puntos"] += 12
-
-    if vivienda == "Lugar aislado":
-        causas["INCIDENTE EN LUGAR AISLADO"]["puntos"] += 22
-
-    # ---- Clima ----
-    if "Tormentas" in clima_exposicion:
-        causas["TORMENTA ELÉCTRICA"]["puntos"] += 30
-    elif "Lluvia" in clima_exposicion:
-        causas["ACCIDENTE VEHICULAR"]["puntos"] += 6
-        causas["COLISIÓN EN MOTOCICLETA"]["puntos"] += 10
-        causas["CAÍDA EN ESTRUCTURA"]["puntos"] += 3
-    elif "Cambios extremos" in clima_exposicion:
-        causas["TORMENTA ELÉCTRICA"]["puntos"] += 10
-
-    # ---- Sismos ----
-    if sismos_zona == "Sí, ocasional":
-        causas["EVENTO SÍSMICO"]["puntos"] += 12
-    elif sismos_zona == "Sí, frecuente":
-        causas["EVENTO SÍSMICO"]["puntos"] += 32
-
-    # ---- Deportes extremos ----
-    if deportes_extremos == "Pocas veces":
-        causas["ACCIDENTE EN ACTIVIDAD EXTREMA"]["puntos"] += 8
-    elif deportes_extremos == "Frecuentemente":
-        causas["ACCIDENTE EN ACTIVIDAD EXTREMA"]["puntos"] += 25
-    elif deportes_extremos == "Constantemente":
-        causas["ACCIDENTE EN ACTIVIDAD EXTREMA"]["puntos"] += 42
-
-    # ---- Miedos como moduladores, no como sentencia automática ----
-    miedo_map = {
-        "El mar / agua profunda": "INCIDENTE ACUÁTICO",
-        "Un volcán": "EVENTO SÍSMICO",
-        "Un terremoto": "EVENTO SÍSMICO",
-        "Una carretera vacía": "ACCIDENTE VEHICULAR",
-        "Una caída desde altura": "CAÍDA EN ESTRUCTURA",
-        "Un incendio": "ACCIDENTE IMPREVISTO",
-        "Una tormenta eléctrica": "TORMENTA ELÉCTRICA",
-        "Un edificio abandonado": "CAÍDA EN ESTRUCTURA",
-        "Un ascensor / espacio cerrado": "INCIDENTE EN ESPACIO CERRADO",
-        "Un bosque de noche": "INCIDENTE EN LUGAR AISLADO",
-        "La oscuridad total": "INCIDENTE EN LUGAR AISLADO",
-        "Estar completamente solo": "INCIDENTE EN LUGAR AISLADO",
-        "Una multitud": "ACCIDENTE IMPREVISTO",
-        "Un accidente aéreo": "ACCIDENTE IMPREVISTO",
-        "Un accidente automovilístico": "ACCIDENTE VEHICULAR",
-        "Animales agresivos": "ACCIDENTE IMPREVISTO",
-        "No poder pedir ayuda": "INCIDENTE EN LUGAR AISLADO",
-    }
-
-    if lugar_temido in miedo_map:
-        causas[miedo_map[lugar_temido]]["puntos"] += 9
-
-    segundo_map = {
-        "Agua profunda": "INCIDENTE ACUÁTICO",
-        "Fuego": "ACCIDENTE IMPREVISTO",
-        "Alturas": "ACCIDENTE EN ALTURA",
-        "Terremotos": "EVENTO SÍSMICO",
-        "Volcanes": "EVENTO SÍSMICO",
-        "Tormentas": "TORMENTA ELÉCTRICA",
-        "Accidentes": "ACCIDENTE IMPREVISTO",
-        "Espacios cerrados": "INCIDENTE EN ESPACIO CERRADO",
-        "Soledad": "INCIDENTE EN LUGAR AISLADO",
-        "Oscuridad": "INCIDENTE EN LUGAR AISLADO",
-        "Perder el control": "ACCIDENTE IMPREVISTO",
-        "Quedar atrapado": "INCIDENTE EN ESPACIO CERRADO",
-    }
-
-    if segundo_temor in segundo_map:
-        causas[segundo_map[segundo_temor]]["puntos"] += 4
-
-    # ---- Bonificaciones por combinaciones coherentes ----
-    if (
-        "Motocicleta" in transporte_principal
-        and horario_mayor_riesgo in ["Noche", "Madrugada"]
-        and visibilidad in ["Mala", "Muy mala"]
-    ):
-        causas["COLISIÓN EN MOTOCICLETA"]["puntos"] += 20
-
-    if (
-        "Automóvil" in transporte_principal
-        and conducir_cansado == "Frecuentemente"
-        and sueño in ["Menos de 4", "4 a 5", "5 a 6"]
-    ):
-        causas["MICROSUEÑO AL VOLANTE"]["puntos"] += 28
-
-    if (
-        escaleras == "Frecuentemente"
-        and piso >= 10
-    ):
-        causas["ACCIDENTE EN ALTURA"]["puntos"] += 18
-
-    if (
-        maquinaria == "Frecuentemente"
-        and lugar_frecuente in ["Obra", "Taller"]
-    ):
-        causas["ACCIDENTE LABORAL"]["puntos"] += 22
-
-    if (
-        agua == "Frecuentemente"
-        and lugar_temido == "El mar / agua profunda"
-    ):
-        causas["INCIDENTE ACUÁTICO"]["puntos"] += 20
-
-    if (
-        sismos_zona == "Sí, frecuente"
-        and lugar_temido == "Un terremoto"
-    ):
-        causas["EVENTO SÍSMICO"]["puntos"] += 20
-
-    if (
-        "Tormentas" in clima_exposicion
-        and lugar_temido == "Una tormenta eléctrica"
-    ):
-        causas["TORMENTA ELÉCTRICA"]["puntos"] += 20
-
-    # Si no hay una exposición fuerte, evitamos que un miedo aislado
-    # domine completamente el resultado.
-    max_puntos = max(v["puntos"] for v in causas.values())
-
-    if max_puntos < 20:
-        causas["ACCIDENTE IMPREVISTO"]["puntos"] += 8
-        causas["ACCIDENTE IMPREVISTO"]["puntos"] += rng.randint(0, 8)
-
-    # Elegimos entre las causas que están muy cerca del máximo.
-    # Esto mantiene variedad sin volver el resultado arbitrario.
-    max_puntos = max(v["puntos"] for v in causas.values())
-    candidatas = [
-        nombre for nombre, datos in causas.items()
-        if datos["puntos"] >= max_puntos - 7
-    ]
-
-    titulo = elegir(candidatas, rng)
-    descripcion = causas[titulo]["desc"]
-
-    return titulo, descripcion, causas[titulo]["puntos"]
+# Modelo estable con nivel gratuito disponible actualmente.
+GEMINI_MODEL = "gemini-2.5-flash-lite"
 
 
-# ============================================================
-# TTS
-# ============================================================
-def generar_voz_ultratumba(texto):
-    edge_tts_bin = shutil.which("edge-tts")
-    ffmpeg_bin = shutil.which("ffmpeg")
-
-    if not edge_tts_bin:
-        return None, (
-            "No se encontró 'edge-tts' en el servidor. "
-            "Agrega edge-tts a requirements.txt y vuelve a desplegar."
-        )
-
-    if not ffmpeg_bin:
-        return None, (
-            "No se encontró FFmpeg en el servidor. "
-            "Agrega 'ffmpeg' a packages.txt y vuelve a desplegar."
-        )
-
-    carpeta = tempfile.mkdtemp(prefix="oraculo_tts_")
-    mp3_path = os.path.join(carpeta, "voz_original.mp3")
-    wav_path = os.path.join(carpeta, "voz_ultratumba.wav")
-
-    try:
-        comando_tts = [
-            edge_tts_bin,
-            "--voice", "es-MX-JorgeNeural",
-            "--rate=-55%",
-            "--volume=-3%",
-            "--pitch=-83Hz",
-            "--text", texto,
-            "--write-media", mp3_path,
-        ]
-
-        tts_resultado = subprocess.run(
-            comando_tts,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            timeout=120,
-        )
-
-        if tts_resultado.returncode != 0:
-            detalle = (tts_resultado.stderr or tts_resultado.stdout or "").strip()
-            return None, (
-                "edge-tts no pudo generar la voz.\n"
-                + (detalle[:1200] if detalle else "Sin mensaje del proveedor TTS.")
-            )
-
-        if not os.path.isfile(mp3_path) or os.path.getsize(mp3_path) < 1000:
-            return None, "edge-tts terminó, pero no generó un archivo MP3 válido."
-
-        filtro = (
-            "asetrate=44100*0.82,"
-            "aresample=44100,"
-            "atempo=1.219512,"
-            "lowpass=f=520,"
-            "aecho=0.80:0.72:50|100|160|240:0.18|0.13|0.09|0.06,"
-            "alimiter=limit=0.88"
-        )
-
-        comando_ffmpeg = [
-            ffmpeg_bin,
-            "-y",
-            "-loglevel", "error",
-            "-i", mp3_path,
-            "-af", filtro,
-            "-ac", "1",
-            "-ar", "44100",
-            "-c:a", "pcm_s16le",
-            wav_path,
-        ]
-
-        ff_resultado = subprocess.run(
-            comando_ffmpeg,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            timeout=120,
-        )
-
-        if ff_resultado.returncode != 0:
-            detalle = (ff_resultado.stderr or "").strip()
-            return None, (
-                "FFmpeg no pudo procesar la voz.\n"
-                + (detalle[:1200] if detalle else "Sin mensaje de FFmpeg.")
-            )
-
-        if not os.path.isfile(wav_path) or os.path.getsize(wav_path) < 1000:
-            return None, "FFmpeg terminó, pero no generó un WAV válido."
-
-        with open(wav_path, "rb") as archivo:
-            audio = archivo.read()
-
-        return audio, None
-
-    except subprocess.TimeoutExpired:
-        return None, "La generación de voz tardó demasiado y fue cancelada."
-    except Exception as exc:
-        return None, f"Error inesperado al generar la voz: {type(exc).__name__}: {exc}"
-    finally:
-        shutil.rmtree(carpeta, ignore_errors=True)
-
-
-# ============================================================
-# AMBIENTE
-# ============================================================
-def instalar_ambiente():
-    try:
-        with open("hell.mp3", "rb") as f:
-            b64 = base64.b64encode(f.read()).decode()
-    except FileNotFoundError:
-        return
-
-    st.components.v1.html(f"""
-    <script>
-    (() => {{
-        const SRC = "data:audio/mpeg;base64,{b64}";
-        const PARENT = window.parent.document;
-        let audio = PARENT.getElementById("oraculo-ambiente-persistente");
-
-        if (!audio) {{
-            audio = PARENT.createElement("audio");
-            audio.id = "oraculo-ambiente-persistente";
-            audio.src = SRC;
-            audio.loop = true;
-            audio.preload = "auto";
-            audio.volume = 0.42;
-            audio.style.display = "none";
-            PARENT.body.appendChild(audio);
-        }} else if (!audio.src.startsWith("data:audio")) {{
-            audio.src = SRC;
-        }}
-
-        window.__oraculoAudio = audio;
-
-        function iniciar() {{
-            audio.loop = true;
-            audio.volume = 0.42;
-            const p = audio.play();
-            if (p && p.catch) p.catch(() => {{}});
-        }}
-
-        if (!window.__oraculoClickHook) {{
-            window.__oraculoClickHook = true;
-            PARENT.addEventListener("click", (ev) => {{
-                const el = ev.target && ev.target.closest
-                    ? ev.target.closest("button") : null;
-                if (!el) return;
-
-                const txt = (el.innerText || "").toUpperCase();
-
-                if (txt.includes("INICIAR EL RITUAL")) {{
-                    iniciar();
-                }}
-            }}, true);
-        }}
-
-        const flag = PARENT.documentElement.dataset.oraculoIniciado === "1";
-        if (flag) iniciar();
-    }})();
-    </script>
-    """, height=0)
-
-
-# ============================================================
-# DEEPSEEK API
-# ============================================================
 def obtener_api_key():
-    """Descarga la API key de DeepSeek desde mms.txt."""
+    """Obtiene la clave de Gemini de forma segura y sin pedirla al usuario."""
     import urllib.request
 
-    if not DEEPSEEK_API_KEY_URL or "TU_USUARIO" in DEEPSEEK_API_KEY_URL or "TU_REPOSITORIO" in DEEPSEEK_API_KEY_URL:
+    # 1. Streamlit Secrets: opción recomendada para Streamlit Cloud.
+    try:
+        clave = st.secrets.get("GEMINI_API_KEY")
+        if clave:
+            clave = str(clave).strip().strip('"').strip("'")
+            if clave:
+                return clave
+    except Exception:
+        pass
+
+    # 2. Variable de entorno.
+    clave = os.getenv("GEMINI_API_KEY", "").strip().strip('"').strip("'")
+    if clave:
+        return clave
+
+    # 3. Compatibilidad con el método anterior basado en mms.txt.
+    if not GEMINI_API_KEY_URL or "TU_USUARIO" in GEMINI_API_KEY_URL or "TU_REPOSITORIO" in GEMINI_API_KEY_URL:
         raise RuntimeError(
-            "No configuraste DEEPSEEK_API_KEY_URL. Coloca la URL RAW de GitHub "
-            "que apunta a mms.txt."
+            "No se encontró GEMINI_API_KEY. Configúrala en Streamlit Secrets "
+            "como GEMINI_API_KEY. Si utilizas mms.txt, configura también "
+            "GEMINI_API_KEY_URL con la URL RAW de tu archivo."
         )
 
     try:
         request = urllib.request.Request(
-            DEEPSEEK_API_KEY_URL,
-            headers={"User-Agent": "HastaAquiLlegaste/1.0"},
+            GEMINI_API_KEY_URL,
+            headers={"User-Agent": "HastaAquiLlegaste-Gemini/1.0"},
         )
         with urllib.request.urlopen(request, timeout=10) as response:
-            api_key = response.read().decode("utf-8").strip()
+            clave = response.read().decode("utf-8", errors="strict").strip()
     except Exception as exc:
         raise RuntimeError(
-            "No se pudo leer mms.txt desde GitHub. "
+            "No se pudo leer la clave de Gemini desde mms.txt. "
             f"Verifica la URL RAW y que el archivo exista. Detalle: {exc}"
         ) from exc
 
-    # Permite que mms.txt tenga solamente la clave, con espacios
-    # o saltos de línea.
-    api_key = api_key.strip().strip('"').strip("'")
+    clave = clave.strip().strip('"').strip("'")
 
-    if not api_key:
-        raise RuntimeError("mms.txt está vacío o no contiene una API key válida.")
+    if not clave:
+        raise RuntimeError("La fuente de la clave está vacía o no contiene una API key válida.")
 
-    return api_key
+    return clave
 
 
 def generar_muerte_detallada_con_ia(resultado):
-    """
-    Genera la reconstrucción detallada usando DeepSeek.
-
-    La API key se obtiene desde mms.txt mediante DEEPSEEK_API_KEY_URL.
-    Se usa HTTP directo para evitar problemas de compatibilidad del SDK
-    y errores de codificación ASCII/UTF-8.
-    """
+    """Genera la reconstrucción detallada exclusivamente con Google Gemini."""
     import urllib.request
     import urllib.error
     import json
@@ -971,88 +159,78 @@ serio y cinematográfico, pero claramente ficticio.
 """
 
         payload = {
-            "model": DEEPSEEK_MODEL,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": (
-                        "Escribe una narración de ficción paranormal en español. "
-                        "No hagas predicciones reales de muerte. "
-                        "No uses gore explícito. "
-                        "Mantén el texto inmersivo y coherente con los datos."
-                    ),
-                },
+            "contents": [
                 {
                     "role": "user",
-                    "content": prompt,
-                },
+                    "parts": [{"text": prompt}]
+                }
             ],
-            "stream": False,
-            "max_tokens": 1800,
-            # Usamos modo no-thinking para esta narracion. Reduce la
-            # complejidad de la solicitud y evita incompatibilidades entre
-            # modelos/versiones de la API.
-            "thinking": {"type": "disabled"},
+            "generationConfig": {
+                "temperature": 0.9,
+                "maxOutputTokens": 1800,
+                "thinkingConfig": {"thinkingBudget": 0}
+            }
         }
 
-        # UTF-8 explícito. Esto evita el error:
-        # UnicodeEncodeError: 'ascii' codec can't encode character ...
-        # ASCII seguro dentro del JSON HTTP.
-        # DeepSeek recibe el contenido correctamente y evitamos que
-        # ninguna capa intermedia intente codificar comillas tipográficas,
-        # guiones largos, emojis u otros caracteres Unicode como Latin-1.
+        # JSON ASCII: Unicode queda representado como \uXXXX.
+        # Así urllib nunca intenta convertir emojis o acentos a Latin-1.
         cuerpo = json.dumps(
             payload,
             ensure_ascii=True,
-            separators=(",", ":"),
+            separators=(",", ":")
         ).encode("ascii")
 
+        url = (
+            "https://generativelanguage.googleapis.com/v1beta/models/"
+            f"{GEMINI_MODEL}:generateContent"
+        )
+
         request = urllib.request.Request(
-            "https://api.deepseek.com/chat/completions",
+            url,
             data=cuerpo,
             headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
+                "x-goog-api-key": api_key,
+                "Content-Type": "application/json; charset=utf-8",
                 "Accept": "application/json",
-                "User-Agent": "Mozilla/5.0 HastaAquiLlegaste/1.1",
+                "User-Agent": "HastaAquiLlegaste-Gemini/1.0",
             },
             method="POST",
         )
 
-        # Algunos proxies/CDN pueden devolver 494 de forma transitoria.
-        # Reintentamos una vez sin modificar el contenido de la solicitud.
-        ultimo_error = None
-        for intento in range(2):
-            try:
-                with urllib.request.urlopen(request, timeout=120) as response:
-                    respuesta_bytes = response.read()
-                break
-            except urllib.error.HTTPError as exc:
-                ultimo_error = exc
-                if exc.code != 494 or intento == 1:
-                    raise
-        else:
-            raise ultimo_error
+        with urllib.request.urlopen(request, timeout=120) as response:
+            respuesta_bytes = response.read()
 
-        respuesta_json = json.loads(respuesta_bytes.decode("utf-8"))
-
-        # DeepSeek devuelve el texto en choices[0].message.content
-        texto = (
-            respuesta_json.get("choices", [{}])[0]
-            .get("message", {})
-            .get("content")
+        respuesta_json = json.loads(
+            respuesta_bytes.decode("utf-8", errors="replace")
         )
 
-        if not texto:
-            error_api = respuesta_json.get("error")
-            if error_api:
-                return None, f"DeepSeek devolvió un error: {error_api}"
-            return None, "DeepSeek respondió, pero no devolvió texto."
+        candidatos = respuesta_json.get("candidates") or []
+        if not candidatos:
+            bloqueos = respuesta_json.get("promptFeedback")
+            detalle = respuesta_json.get("error")
+            if detalle:
+                return None, f"Gemini devolvió un error: {detalle}"
+            if bloqueos:
+                return None, f"Gemini no generó la respuesta. Detalle: {bloqueos}"
+            return None, "Gemini respondió, pero no devolvió candidatos de texto."
 
-        # Normaliza el texto recibido a Unicode UTF-8 en memoria.
-        # No se hace ningún encode Latin-1 del contenido generado.
-        texto = str(texto).replace("\r\n", "\n").replace("\r", "\n")
-        return texto.strip(), None
+        partes = candidatos[0].get("content", {}).get("parts", [])
+        textos = [
+            str(parte.get("text", ""))
+            for parte in partes
+            if parte.get("text")
+        ]
+        texto = "\n".join(textos).strip()
+
+        if not texto:
+            motivo = candidatos[0].get("finishReason", "desconocido")
+            return None, (
+                "Gemini terminó la generación sin devolver texto. "
+                f"Motivo: {motivo}"
+            )
+
+        texto = texto.replace("\r\n", "\n").replace("\r", "\n")
+        return texto, None
 
     except urllib.error.HTTPError as exc:
         try:
@@ -1060,22 +238,42 @@ serio y cinematográfico, pero claramente ficticio.
         except Exception:
             detalle = str(exc)
 
-        if exc.code == 494:
+        if exc.code == 400:
             return None, (
-                "DeepSeek no pudo aceptar la conexión (HTTP 494 / CloudFront).\n"
-                "La solicitud llegó al servidor/CDN, pero fue rechazada antes de procesarse.\n"
-                "Se corrigió la llamada para usar el modelo DeepSeek actual y una petición HTTP más compatible.\n"
-                f"Detalle del servidor: {detalle}"
+                "Gemini rechazó la solicitud (HTTP 400).\n"
+                "Revisa que la API key sea válida y que el modelo esté disponible "
+                f"para tu proyecto.\nDetalle: {detalle[:1600]}"
+            )
+
+        if exc.code == 403:
+            return None, (
+                "Gemini rechazó la API key (HTTP 403).\n"
+                "Verifica que la clave pertenezca a un proyecto de Google AI Studio "
+                f"con acceso a la Gemini API.\nDetalle: {detalle[:1600]}"
+            )
+
+        if exc.code == 404:
+            return None, (
+                "El modelo de Gemini no está disponible en este endpoint (HTTP 404).\n"
+                f"Modelo configurado: {GEMINI_MODEL}\n"
+                f"Detalle: {detalle[:1600]}"
+            )
+
+        if exc.code == 429:
+            return None, (
+                "Gemini alcanzó temporalmente el límite de solicitudes del nivel gratuito "
+                "(HTTP 429). Espera un momento y vuelve a intentarlo.\n"
+                f"Detalle: {detalle[:1600]}"
             )
 
         return None, (
-            "DeepSeek rechazó la solicitud.\n"
-            f"HTTP {exc.code}: {detalle}"
+            f"Gemini rechazó la solicitud (HTTP {exc.code}).\n"
+            f"Detalle: {detalle[:1600]}"
         )
 
     except urllib.error.URLError as exc:
         return None, (
-            "No fue posible conectar con la API de DeepSeek.\n"
+            "No fue posible conectar con la API de Gemini.\n"
             f"{type(exc).__name__}: {exc}"
         )
 
@@ -1087,7 +285,7 @@ serio y cinematográfico, pero claramente ficticio.
 
     except Exception as exc:
         return None, (
-            f"No fue posible consultar la API de DeepSeek.\n"
+            f"No fue posible consultar Gemini.\n"
             f"{type(exc).__name__}: {exc}"
         )
 
