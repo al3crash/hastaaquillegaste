@@ -28,7 +28,7 @@ st.set_page_config(
 # ============================================================
 # Cambia estos valores si quieres usar otro contador o tu enlace de PayPal.
 COUNTER_ID = "alex-ultratumba"
-PAYPAL_URL = "https://www.paypal.me/TU_USUARIO"
+PAYPAL_URL = "https://www.paypal.com/ncp/payment/HAALKPRK6DT8G"
 
 # ============================================================
 # ESTADO PERSISTENTE
@@ -1444,8 +1444,7 @@ if st.session_state.resultado_generado and st.session_state.resultado:
             <source src="data:audio/wav;base64,{audio_b64}" type="audio/wav">
           </audio>
           <div style="color:#777785;font-size:10px;margin-top:10px;">
-            # pon lo que quieras
-          </div>
+                  </div>
         </div>
 
         <script>
