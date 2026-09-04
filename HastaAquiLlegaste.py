@@ -27,7 +27,7 @@ st.set_page_config(
 # CONFIGURACIÓN PÚBLICA
 # ============================================================
 # Cambia estos valores si quieres usar otro contador o tu enlace de PayPal.
-COUNTER_ID = "alex-ultratumba"
+
 PAYPAL_URL = "https://www.paypal.com/ncp/payment/HAALKPRK6DT8G"
 
 # ============================================================
