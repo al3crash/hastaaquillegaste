@@ -1444,7 +1444,7 @@ if st.session_state.resultado_generado and st.session_state.resultado:
             <source src="data:audio/wav;base64,{audio_b64}" type="audio/wav">
           </audio>
           <div style="color:#777785;font-size:10px;margin-top:10px;">
-            Voz masculina grave con reverberación suave.
+            # pon lo que quieras
           </div>
         </div>
 
