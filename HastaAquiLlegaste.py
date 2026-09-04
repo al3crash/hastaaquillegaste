@@ -43,7 +43,7 @@ PAYPAL_URL = "https://www.paypal.com/ncp/payment/HAALKPRK6DT8G"
 #
 # EJEMPLO:
 # https://raw.githubusercontent.com/TU_USUARIO/TU_REPOSITORIO/main/mms.txt
-MMS_API_KEY_URL = "https://raw.githubusercontent.com/TU_USUARIO/TU_REPOSITORIO/main/mms.txt"
+MMS_API_KEY_URL = "https://github.com/al3crash/hastaaquillegaste/blob/main/mms.txt"
 
 # Modelo usado por "MI MUERTE MÁS DETALLADA".
 OPENAI_MODEL = "gpt-5.6-luna"
