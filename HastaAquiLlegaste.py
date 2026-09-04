@@ -969,7 +969,7 @@ serio y cinematográfico, pero claramente ficticio.
 """
 
         respuesta = cliente.chat.completions.create(
-            model=DEEPSEEK_MODEL,
+            model="deepseek-v4-pro",
             messages=[
                 {
                     "role": "system",
@@ -1071,7 +1071,7 @@ serio y cinematográfico, pero claramente ficticio.
 """
 
         respuesta = cliente.responses.create(
-            model=OPENAI_MODEL,
+            model="deepseek-v4-flash",
             instructions=(
                 "Escribe una narración de ficción paranormal en español. "
                 "No hagas predicciones reales de muerte. "
