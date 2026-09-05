@@ -4,3 +4,5 @@ numpy
 scipy
 edge-tts
 openai
+google-genai
+request
