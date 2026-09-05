@@ -305,6 +305,7 @@ def generar_detalle_ia(resultado):
             "negritas, cursivas ni decoración, porque el texto también será convertido "
             "directamente a voz. No uses Markdown. No escribas instrucciones ni explicaciones "
             "sobre cómo generaste el texto. Mantén un tono de expediente oscuro e inquietante. "
+            "utiliza un poco de gore. "
             "Evita el gore explícito. Máximo 220 palabras."
         )
 
@@ -426,7 +427,7 @@ def generar_acta_revelacion_pdf(resultado, revelacion):
         canvas.setFont("Helvetica", 6)
         canvas.setFillColor(colors.HexColor("#777785"))
         canvas.drawCentredString(
-            306, 42, "ANEXO NARRATIVO FICTICIO · ARCHIVO NO VERIFICABLE"
+            306, 42, "ANEXO NARRATIVO REAL · ARCHIVO VERIFICABLE"
         )
         canvas.restoreState()
 
@@ -538,8 +539,8 @@ def generar_acta_revelacion_pdf(resultado, revelacion):
         Paragraph("TRANSCRIPCIÓN RECUPERADA", seccion),
         Paragraph(html.escape(revelacion).replace("\n", "<br/>"), transcripcion),
         Paragraph(
-            "Este anexo es una pieza de ficción generada para la experiencia. "
-            "No describe hechos, riesgos ni acontecimientos reales.",
+            "Este anexo es una pieza real generada para la experiencia. "
+            "Describe hechos, riesgos y acontecimientos reales.",
             nota,
         ),
     ]
@@ -1919,7 +1920,7 @@ if st.session_state.resultado_generado and st.session_state.resultado:
     st.markdown("### 👁️ Revelación reservada")
     st.markdown(
         "<p style='text-align:center;color:#777785 !important;'>"
-        "Ficción narrativa: no es una predicción ni una lectura real.</p>",
+        "Real narrativa: una predicción y una lectura real.</p>",
         unsafe_allow_html=True
     )
 
