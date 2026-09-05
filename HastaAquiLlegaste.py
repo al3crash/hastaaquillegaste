@@ -28,19 +28,18 @@ st.set_page_config(
 PAYPAL_URL = "https://www.paypal.com/ncp/payment/HAALKPRK6DT8G"
 
 # ============================================================
-# GEMINI API
+# GEMINI
 # ============================================================
-# La aplicación utiliza exclusivamente Google Gemini para generar
-# "MI MUERTE MÁS DETALLADA".
+# La clave se toma EXCLUSIVAMENTE de Streamlit Secrets.
+# En Streamlit Cloud: Settings -> Secrets
 #
-# La clave se busca en este orden:
-#   1) st.secrets["GEMINI_API_KEY"]
-#   2) variable de entorno GEMINI_API_KEY
-#   3) archivo mms.txt mediante URL RAW
+# [secrets]
+# GEMINI_API_KEY = "TU_CLAVE_DE_GEMINI"
 #
-# No se utiliza DeepSeek ni OpenAI.
-GEMINI_API_KEY_URL = "https://github.com/al3crash/hastaaquillegaste/blob/main/mms.txt"
+# Se usa exclusivamente Gemini; no se utiliza OpenAI, DeepSeek ni mms.txt.
+# Gemini 2.5 Flash-Lite tiene nivel gratuito en la Gemini API.
 GEMINI_MODEL = "gemini-2.5-flash-lite"
+
 
 for key, default in {
     "ritual_iniciado": False,
@@ -867,55 +866,36 @@ def instalar_ambiente():
 # GEMINI API
 # ============================================================
 def obtener_api_key():
-    """Obtiene la clave de Gemini de forma segura y sin pedirla al usuario."""
-    import urllib.request
-
-    # 1. Streamlit Secrets: opción recomendada para Streamlit Cloud.
+    """Obtiene exclusivamente la API key de Gemini desde Streamlit Secrets."""
     try:
-        clave = st.secrets.get("GEMINI_API_KEY")
-        if clave:
-            clave = str(clave).strip().strip('"').strip("'")
-            if clave:
-                return clave
-    except Exception:
-        pass
-
-    # 2. Variable de entorno.
-    clave = os.getenv("GEMINI_API_KEY", "").strip().strip('"').strip("'")
-    if clave:
-        return clave
-
-    # 3. Compatibilidad con el método anterior basado en mms.txt.
-    if not GEMINI_API_KEY_URL or "TU_USUARIO" in GEMINI_API_KEY_URL or "TU_REPOSITORIO" in GEMINI_API_KEY_URL:
-        raise RuntimeError(
-            "No se encontró GEMINI_API_KEY. Configúrala en Streamlit Secrets "
-            "como GEMINI_API_KEY. Si utilizas mms.txt, configura también "
-            "GEMINI_API_KEY_URL con la URL RAW de tu archivo."
-        )
-
-    try:
-        request = urllib.request.Request(
-            GEMINI_API_KEY_URL,
-            headers={"User-Agent": "HastaAquiLlegaste-Gemini/1.0"},
-        )
-        with urllib.request.urlopen(request, timeout=10) as response:
-            clave = response.read().decode("utf-8", errors="strict").strip()
+        api_key = st.secrets.get("GEMINI_API_KEY", "")
     except Exception as exc:
         raise RuntimeError(
-            "No se pudo leer la clave de Gemini desde mms.txt. "
-            f"Verifica la URL RAW y que el archivo exista. Detalle: {exc}"
+            "No se pudo acceder a GEMINI_API_KEY en Streamlit Secrets. "
+            f"Detalle: {type(exc).__name__}: {exc}"
         ) from exc
 
-    clave = clave.strip().strip('"').strip("'")
+    if not api_key:
+        raise RuntimeError(
+            "Falta GEMINI_API_KEY. En Streamlit Cloud ve a Settings -> Secrets "
+            "y agrega: GEMINI_API_KEY = \"TU_CLAVE\""
+        )
 
-    if not clave:
-        raise RuntimeError("La fuente de la clave está vacía o no contiene una API key válida.")
+    # Permite pegar la clave con comillas o espacios accidentales.
+    api_key = str(api_key).strip().strip('"').strip("'").strip()
 
-    return clave
+    # Si alguien pegó por error un prefijo Bearer, lo quitamos.
+    if api_key.lower().startswith("bearer "):
+        api_key = api_key[7:].strip()
+
+    if not api_key:
+        raise RuntimeError("GEMINI_API_KEY está vacía.")
+
+    return api_key
 
 
 def generar_muerte_detallada_con_ia(resultado):
-    """Genera la reconstrucción detallada exclusivamente con Google Gemini."""
+    """Genera la reconstrucción detallada usando exclusivamente Gemini."""
     import urllib.request
     import urllib.error
     import json
@@ -974,28 +954,40 @@ El tono debe parecer un expediente secreto del "Más Allá", oscuro,
 serio y cinematográfico, pero claramente ficticio.
 """
 
+        # Estructura oficial de generateContent de Gemini.
+        # ensure_ascii=True hace que el JSON de transporte sea ASCII puro,
+        # evitando problemas de codificación con proxies/intermediarios.
         payload = {
             "contents": [
                 {
                     "role": "user",
-                    "parts": [{"text": prompt}]
+                    "parts": [
+                        {
+                            "text": (
+                                "Escribe una narración de ficción paranormal en español. "
+                                "No hagas predicciones reales de muerte. "
+                                "No uses gore explícito. "
+                                "Mantén el texto inmersivo y coherente con los datos.\n\n"
+                                + prompt
+                            )
+                        }
+                    ],
                 }
             ],
             "generationConfig": {
                 "temperature": 0.9,
-                "maxOutputTokens": 1800,
-                "thinkingConfig": {"thinkingBudget": 0}
-            }
+                "maxOutputTokens": 2200,
+            },
         }
 
-        # JSON ASCII: Unicode queda representado como \uXXXX.
-        # Así urllib nunca intenta convertir emojis o acentos a Latin-1.
         cuerpo = json.dumps(
             payload,
             ensure_ascii=True,
-            separators=(",", ":")
+            separators=(",", ":"),
         ).encode("ascii")
 
+        # Google documenta x-goog-api-key como el header de autenticación
+        # para la Gemini API. No usamos Authorization/Bearer.
         url = (
             "https://generativelanguage.googleapis.com/v1beta/models/"
             f"{GEMINI_MODEL}:generateContent"
@@ -1006,9 +998,9 @@ serio y cinematográfico, pero claramente ficticio.
             data=cuerpo,
             headers={
                 "x-goog-api-key": api_key,
-                "Content-Type": "application/json; charset=utf-8",
+                "Content-Type": "application/json",
                 "Accept": "application/json",
-                "User-Agent": "HastaAquiLlegaste-Gemini/1.0",
+                "User-Agent": "HastaAquiLlegaste/2.0",
             },
             method="POST",
         )
@@ -1016,34 +1008,34 @@ serio y cinematográfico, pero claramente ficticio.
         with urllib.request.urlopen(request, timeout=120) as response:
             respuesta_bytes = response.read()
 
-        respuesta_json = json.loads(
-            respuesta_bytes.decode("utf-8", errors="replace")
-        )
+        respuesta_json = json.loads(respuesta_bytes.decode("utf-8", errors="replace"))
 
+        # Gemini devuelve el texto dentro de candidates[0].content.parts[].text
         candidatos = respuesta_json.get("candidates") or []
-        if not candidatos:
-            bloqueos = respuesta_json.get("promptFeedback")
-            detalle = respuesta_json.get("error")
-            if detalle:
-                return None, f"Gemini devolvió un error: {detalle}"
-            if bloqueos:
-                return None, f"Gemini no generó la respuesta. Detalle: {bloqueos}"
-            return None, "Gemini respondió, pero no devolvió candidatos de texto."
+        texto_partes = []
 
-        partes = candidatos[0].get("content", {}).get("parts", [])
-        textos = [
-            str(parte.get("text", ""))
-            for parte in partes
-            if parte.get("text")
-        ]
-        texto = "\n".join(textos).strip()
+        if candidatos:
+            contenido = candidatos[0].get("content") or {}
+            for parte in contenido.get("parts") or []:
+                texto_parte = parte.get("text")
+                if texto_parte:
+                    texto_partes.append(str(texto_parte))
+
+        texto = "\n".join(texto_partes).strip()
 
         if not texto:
-            motivo = candidatos[0].get("finishReason", "desconocido")
-            return None, (
-                "Gemini terminó la generación sin devolver texto. "
-                f"Motivo: {motivo}"
-            )
+            bloqueado = ""
+            if candidatos:
+                razon = candidatos[0].get("finishReason")
+                if razon:
+                    bloqueado = f" Motivo de finalización: {razon}."
+
+            error_api = respuesta_json.get("error")
+            if error_api:
+                mensaje = error_api.get("message", error_api) if isinstance(error_api, dict) else error_api
+                return None, f"Gemini rechazó la solicitud: {mensaje}"
+
+            return None, "Gemini respondió, pero no devolvió texto." + bloqueado
 
         texto = texto.replace("\r\n", "\n").replace("\r", "\n")
         return texto, None
@@ -1054,37 +1046,19 @@ serio y cinematográfico, pero claramente ficticio.
         except Exception:
             detalle = str(exc)
 
-        if exc.code == 400:
-            return None, (
-                "Gemini rechazó la solicitud (HTTP 400).\n"
-                "Revisa que la API key sea válida y que el modelo esté disponible "
-                f"para tu proyecto.\nDetalle: {detalle[:1600]}"
-            )
-
-        if exc.code == 403:
-            return None, (
-                "Gemini rechazó la API key (HTTP 403).\n"
-                "Verifica que la clave pertenezca a un proyecto de Google AI Studio "
-                f"con acceso a la Gemini API.\nDetalle: {detalle[:1600]}"
-            )
-
-        if exc.code == 404:
-            return None, (
-                "El modelo de Gemini no está disponible en este endpoint (HTTP 404).\n"
-                f"Modelo configurado: {GEMINI_MODEL}\n"
-                f"Detalle: {detalle[:1600]}"
-            )
-
-        if exc.code == 429:
-            return None, (
-                "Gemini alcanzó temporalmente el límite de solicitudes del nivel gratuito "
-                "(HTTP 429). Espera un momento y vuelve a intentarlo.\n"
-                f"Detalle: {detalle[:1600]}"
-            )
+        # Intentamos mostrar el mensaje real de Gemini en lugar del HTML
+        # genérico de CloudFront/proxy.
+        try:
+            detalle_json = json.loads(detalle)
+            error_obj = detalle_json.get("error", {})
+            if isinstance(error_obj, dict):
+                detalle = error_obj.get("message", detalle)
+        except Exception:
+            pass
 
         return None, (
-            f"Gemini rechazó la solicitud (HTTP {exc.code}).\n"
-            f"Detalle: {detalle[:1600]}"
+            "Gemini rechazó la solicitud.\n"
+            f"HTTP {exc.code}: {detalle}"
         )
 
     except urllib.error.URLError as exc:
@@ -1101,7 +1075,7 @@ serio y cinematográfico, pero claramente ficticio.
 
     except Exception as exc:
         return None, (
-            f"No fue posible consultar Gemini.\n"
+            "No fue posible consultar la API de Gemini.\n"
             f"{type(exc).__name__}: {exc}"
         )
 
