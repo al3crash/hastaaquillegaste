@@ -281,7 +281,7 @@ def calcular_edad_en_fecha(fecha_nacimiento, fecha_muerte):
 
 
 def generar_detalle_ia(resultado):
-    """Genera una expansión ficticia con Gemini usando todo el cuestionario y el resultado."""
+    """Genera una expansión ficticia con Gemini sin datos identificables."""
     try:
         from google import genai
     except ImportError:
@@ -296,40 +296,20 @@ def generar_detalle_ia(resultado):
         cliente = genai.Client(api_key=api_key)
         instrucciones = (
                 "Escribe en español una escena breve de horror psicológico. "
-                "Es una obra de prediccion: presentala como predicción, "
-                "hecho real, diagnóstico o consejo. una fechas nombres, fechas de "
-                "nacimiento, edades y datos identificables. Mantén coherencia "
+                "Es una obra de ficción: jamás la presentes como predicción, "
+                "hecho real, diagnóstico o consejo. No uses nombres, fechas de "
+                "nacimiento, edades ni datos identificables. Mantén coherencia "
                 "total entre escenario y lugar. Usa un tono de expediente prohibido: "
                 "silencios que parecen responder, registros incompletos, presencias "
-                "ambiguas y un cierre inquietante. usa si es posible un poco de gore "
+                "ambiguas y un cierre inquietante. Evita el gore explícito. "
                 "Máximo 220 palabras."
         )
-        cuestionario = resultado.get("cuestionario", {})
-        datos_cuestionario = "\n".join(
-            f"- {clave}: {valor}"
-            for clave, valor in cuestionario.items()
-        )
-
         solicitud = (
             f"{instrucciones}\n\n"
-            "Genera directamente el anexo narrativo a partir de TODA la información "
-            "del cuestionario y del resultado. No ignores campos aunque parezcan poco "
-            "importantes. Usa el nombre de la persona y todos los datos disponibles "
-            "para mantener continuidad narrativa. No inventes respuestas al cuestionario.\n\n"
-            "DATOS COMPLETOS DEL CUESTIONARIO:\n"
-            f"{datos_cuestionario}\n\n"
-            "RESULTADO GENERADO POR EL MOTOR:\n"
+            "Amplía este expediente ficticio de terror.\n"
             f"Escenario: {resultado['escenario']}\n"
             f"Lugar: {resultado['lugar']}\n"
-            f"Causa: {resultado['causa']}\n"
-            f"Nivel: {resultado['nivel']}\n"
-            f"Riesgo: {resultado['riesgo']}\n"
-            f"Fecha del deceso: {resultado['muerte']}\n"
-            f"Edad al fallecer: {resultado['edad_muerte']} años\n"
-            f"Nombre: {resultado['nombre']}\n\n"
-            "FORMATO: entrega texto limpio para lectura por voz. NO uses Markdown, "
-            "NO uses asteriscos, almohadillas, guiones de encabezado ni otros "
-            "marcadores de formato. Escribe encabezados como texto normal."
+            f"Lectura previa: {resultado['causa']}"
         )
         respuesta = cliente.models.generate_content(
             model="gemini-3.1-flash-lite",
@@ -338,10 +318,6 @@ def generar_detalle_ia(resultado):
         texto = (respuesta.text or "").strip()
         if not texto:
             return None, "La IA no devolvió texto para el expediente."
-
-        # El anexo se entrega como texto plano para que TTS no pronuncie
-        # marcadores Markdown como los asteriscos de texto en negritas.
-        texto = texto.replace("*", "")
         return texto, None
     except Exception as exc:
         # El detalle queda en los logs y, solo durante pruebas, también se
@@ -505,8 +481,8 @@ def generar_acta_revelacion_pdf(resultado, revelacion):
         Paragraph("TRANSCRIPCIÓN RECUPERADA", seccion),
         Paragraph(html.escape(revelacion).replace("\n", "<br/>"), transcripcion),
         Paragraph(
-            "Este anexo es una pieza de prediccion generada para la experiencia. "
-            "Describe hechos, riesgos y acontecimientos reales.",
+            "Este anexo es una pieza de ficción generada para la experiencia. "
+            "No describe hechos, riesgos ni acontecimientos reales.",
             nota,
         ),
     ]
@@ -1678,42 +1654,6 @@ if enviar:
                 miedo=lugar_temido,
                 segundo_miedo=segundo_temor,
                 fecha_registro=datetime.now().strftime("%d/%m/%Y"),
-                cuestionario={
-                    "Nombre": nombre_str,
-                    "Sexo": sexo,
-                    "Fecha de nacimiento": nacimiento_str,
-                    "Estado civil": estado_civil,
-                    "Personas dependientes": personas_dependientes,
-                    "Ocupación": ocupacion,
-                    "Piso": piso,
-                    "Transporte principal": transporte_principal,
-                    "Tiempo de desplazamiento": tiempo_desplazamiento,
-                    "Horario de mayor riesgo": horario_mayor_riesgo,
-                    "Entorno urbano": entorno_urbano,
-                    "Sismos en la zona": sismos_zona,
-                    "Clima de exposición": clima_exposicion,
-                    "Actividad física": actividad_fisica,
-                    "Deportes extremos": deportes_extremos,
-                    "Sueño": sueño,
-                    "Fatiga": fatiga,
-                    "Tabaco": tabaco,
-                    "Alcohol": alcohol,
-                    "Sustancias": sustancias,
-                    "Vivienda": vivienda,
-                    "Escaleras": escaleras,
-                    "Agua": agua,
-                    "Maquinaria": maquinaria,
-                    "Conducir cansado": conducir_cansado,
-                    "Objetos de riesgo": objetos_riesgo,
-                    "Visibilidad": visibilidad,
-                    "Atención": atencion,
-                    "Lugar frecuente": lugar_frecuente,
-                    "Creencias": creencias,
-                    "Afición al terror": aficion_terror,
-                    "Reliquias": reliquias,
-                    "Lugar temido": lugar_temido,
-                    "Segundo temor": segundo_temor,
-                },
             )
     
             st.session_state.resultado = resultado
@@ -1892,7 +1832,7 @@ if st.session_state.resultado_generado and st.session_state.resultado:
     st.markdown("### 👁️ Revelación reservada")
     st.markdown(
         "<p style='text-align:center;color:#777785 !important;'>"
-        "Prediccion narrativa: es una predicción y una lectura real.</p>",
+        "Ficción narrativa: no es una predicción ni una lectura real.</p>",
         unsafe_allow_html=True
     )
 
