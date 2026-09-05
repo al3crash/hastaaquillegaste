@@ -331,7 +331,7 @@ def generar_voz_ultratumba(texto):
             edge_tts_bin,
             "--voice", "es-MX-JorgeNeural",
             "--rate=-55%",
-            "--volume=-1%",
+            "--volume=+20%",
             "--pitch=-83Hz",
             "--text", texto,
             "--write-media", mp3_path,
@@ -362,7 +362,8 @@ def generar_voz_ultratumba(texto):
             "atempo=1.219512,"
             "lowpass=f=520,"
             "aecho=0.80:0.72:50|100|160|240:0.18|0.13|0.09|0.06,"
-            "alimiter=limit=0.88"
+            "volume=6dB,"
+            "alimiter=limit=0.97"
         )
 
         comando_ffmpeg = [
@@ -443,7 +444,7 @@ def instalar_ambiente():
 
         function iniciar() {{
             audio.loop = true;
-            audio.volume = 2.0;
+            audio.volume = 0.42;
             const p = audio.play();
             if (p && p.catch) p.catch(() => {{}});
         }}
