@@ -296,12 +296,12 @@ def generar_detalle_ia(resultado):
         cliente = genai.Client(api_key=api_key)
         instrucciones = (
                 "Escribe en español una escena breve de horror psicológico. "
-                "Es una obra de ficción: jamás la presentes como predicción, "
-                "hecho real, diagnóstico o consejo. No uses nombres, fechas de "
-                "nacimiento, edades ni datos identificables. Mantén coherencia "
+                "Es una obra de prediccion: presentala como predicción, "
+                "hecho real, diagnóstico o consejo. una fechas nombres, fechas de "
+                "nacimiento, edades y datos identificables. Mantén coherencia "
                 "total entre escenario y lugar. Usa un tono de expediente prohibido: "
                 "silencios que parecen responder, registros incompletos, presencias "
-                "ambiguas y un cierre inquietante. Evita el gore explícito. "
+                "ambiguas y un cierre inquietante. usa si es posible un poco de gore "
                 "Máximo 220 palabras."
         )
         cuestionario = resultado.get("cuestionario", {})
@@ -505,8 +505,8 @@ def generar_acta_revelacion_pdf(resultado, revelacion):
         Paragraph("TRANSCRIPCIÓN RECUPERADA", seccion),
         Paragraph(html.escape(revelacion).replace("\n", "<br/>"), transcripcion),
         Paragraph(
-            "Este anexo es una pieza de ficción generada para la experiencia. "
-            "No describe hechos, riesgos ni acontecimientos reales.",
+            "Este anexo es una pieza de prediccion generada para la experiencia. "
+            "Describe hechos, riesgos y acontecimientos reales.",
             nota,
         ),
     ]
@@ -1892,7 +1892,7 @@ if st.session_state.resultado_generado and st.session_state.resultado:
     st.markdown("### 👁️ Revelación reservada")
     st.markdown(
         "<p style='text-align:center;color:#777785 !important;'>"
-        "Ficción narrativa: no es una predicción ni una lectura real.</p>",
+        "Prediccion narrativa: es una predicción y una lectura real.</p>",
         unsafe_allow_html=True
     )
 
