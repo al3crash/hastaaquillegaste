@@ -42,6 +42,8 @@ for key, default in {
     "audio_error": None,
     "pdf_generado": None,
     "folio": None,
+    "detalle_ia": None,
+    "detalle_ia_error": None,
 }.items():
     if key not in st.session_state:
         st.session_state[key] = default
@@ -71,6 +73,8 @@ def limpiar_todo():
     st.session_state.audio_error = None
     st.session_state.pdf_generado = None
     st.session_state.folio = None
+    st.session_state.detalle_ia = None
+    st.session_state.detalle_ia_error = None
 
 
 # ============================================================
@@ -264,6 +268,46 @@ def calcular_edad_en_fecha(fecha_nacimiento, fecha_muerte):
     if (muerte.month, muerte.day) < (nacimiento.month, nacimiento.day):
         edad -= 1
     return max(0, edad)
+
+
+def generar_detalle_ia(resultado):
+    """Genera una expansión ficticia sin enviar datos identificables."""
+    try:
+        from openai import OpenAI
+    except ImportError:
+        return None, "Falta instalar la dependencia 'openai' en requirements.txt."
+
+    try:
+        api_key = st.secrets["OPENAI_API_KEY"]
+    except (KeyError, FileNotFoundError):
+        return None, "No se encontró el secreto OPENAI_API_KEY en Streamlit."
+
+    try:
+        cliente = OpenAI(api_key=api_key)
+        respuesta = cliente.responses.create(
+            model="gpt-5",
+            store=False,
+            instructions=(
+                "Escribe en español una escena breve de horror psicológico. "
+                "Es una obra de ficción: jamás la presentes como predicción, "
+                "hecho real, diagnóstico o consejo. No uses nombres, fechas de "
+                "nacimiento, edades ni datos identificables. Mantén coherencia "
+                "total entre escenario y lugar. Usa detalles sensoriales, "
+                "presencias ambiguas y un cierre inquietante. Máximo 220 palabras."
+            ),
+            input=(
+                "Amplía este expediente ficticio de terror.\n"
+                f"Escenario: {resultado['escenario']}\n"
+                f"Lugar: {resultado['lugar']}\n"
+                f"Lectura previa: {resultado['causa']}"
+            ),
+        )
+        texto = (respuesta.output_text or "").strip()
+        if not texto:
+            return None, "La IA no devolvió texto para el expediente."
+        return texto, None
+    except Exception as exc:
+        return None, f"No se pudo abrir el expediente adicional: {exc}"
 
 
 def dibujar_codigo_barras(canvas, x, y, semilla):
@@ -502,6 +546,8 @@ if not st.session_state.ritual_iniciado:
         st.session_state.audio_generado = None
         st.session_state.audio_error = None
         st.session_state.pdf_generado = None
+        st.session_state.detalle_ia = None
+        st.session_state.detalle_ia_error = None
 
         st.components.v1.html("""
         <script>
@@ -1444,6 +1490,8 @@ if enviar:
             st.session_state.folio = folio_num
             st.session_state.resultado_generado = True
             st.session_state.pdf_generado = None
+            st.session_state.detalle_ia = None
+            st.session_state.detalle_ia_error = None
     
             # ====================================================
             # GENERACIÓN DE AUDIO
@@ -1604,6 +1652,39 @@ if st.session_state.resultado_generado and st.session_state.resultado:
             <div class="error-voz">{html.escape(mensaje)}</div>
         </div>
         """, unsafe_allow_html=True)
+
+    # ========================================================
+    # DETALLE GENERADO POR IA
+    # ========================================================
+    st.markdown("### 👁️ Revelación reservada")
+    st.markdown(
+        "<p style='text-align:center;color:#777785 !important;'>"
+        "Ficción narrativa: no es una predicción ni una lectura real.</p>",
+        unsafe_allow_html=True
+    )
+
+    if st.session_state.detalle_ia is None:
+        if st.button(
+            "📜 MI MUERTE CON MÁS DETALLE",
+            use_container_width=True,
+            key="generar_detalle_ia"
+        ):
+            with st.spinner("La última página del expediente se está revelando..."):
+                detalle_ia, error_ia = generar_detalle_ia(r)
+                st.session_state.detalle_ia = detalle_ia
+                st.session_state.detalle_ia_error = error_ia
+
+    if st.session_state.detalle_ia:
+        texto_detalle = html.escape(st.session_state.detalle_ia).replace("\n", "<br>")
+        st.markdown(
+            f'<div class="resultado-profundo">{texto_detalle}</div>',
+            unsafe_allow_html=True
+        )
+    elif st.session_state.detalle_ia_error:
+        st.markdown(
+            f'<div class="error-voz">{html.escape(st.session_state.detalle_ia_error)}</div>',
+            unsafe_allow_html=True
+        )
 
     # ========================================================
     # PDF
