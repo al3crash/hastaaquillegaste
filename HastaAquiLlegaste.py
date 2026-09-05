@@ -809,12 +809,12 @@ with st.form("ritual_mortal_completo"):
         horizontal=True,
         key="campo_sexo"
     )
-   fecha_nacimiento = st.date_input(
-    "Fecha de nacimiento:",
-    min_value=datetime(1900, 1, 1),
-    max_value=datetime(2100, 12, 31),
-    value=datetime(2000, 1, 1),
-    key="campo_fecha"
+    fecha_nacimiento = st.date_input(
+        "Fecha de nacimiento:",
+        min_value=datetime(1900, 1, 1),
+        max_value=datetime.today(),
+        value=datetime(2100, 1, 1),
+        key="campo_fecha"
     )
     estado_civil = st.radio(
         "Estado civil:",
