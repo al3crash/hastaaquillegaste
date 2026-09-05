@@ -815,7 +815,6 @@ with st.form("ritual_mortal_completo"):
     max_value=datetime(2100, 12, 31),
     value=datetime(2000, 1, 1),
     key="campo_fecha"
-)
     )
     estado_civil = st.radio(
         "Estado civil:",
