@@ -281,7 +281,7 @@ def calcular_edad_en_fecha(fecha_nacimiento, fecha_muerte):
 
 
 def generar_detalle_ia(resultado):
-    """Genera una expansión ficticia con Gemini sin datos identificables."""
+    """Genera el anexo con Gemini usando todo el expediente y cuestionario."""
     try:
         from google import genai
     except ImportError:
@@ -295,22 +295,77 @@ def generar_detalle_ia(resultado):
     try:
         cliente = genai.Client(api_key=api_key)
         instrucciones = (
-                "Escribe en español una escena breve de horror psicológico. "
-                "Es una obra de ficción: jamás la presentes como predicción, "
-                "hecho real, diagnóstico o consejo. No uses nombres, fechas de "
-                "nacimiento, edades ni datos identificables. Mantén coherencia "
-                "total entre escenario y lugar. Usa un tono de expediente prohibido: "
-                "silencios que parecen responder, registros incompletos, presencias "
-                "ambiguas y un cierre inquietante. Evita el gore explícito. "
-                "Máximo 220 palabras."
+            "Escribe en español una escena breve de horror psicológico basada "
+            "directamente en TODO el expediente y en TODAS las respuestas del cuestionario. "
+            "Usa el nombre y los datos proporcionados para mantener continuidad con el "
+            "expediente principal. Respeta exactamente la fecha de nacimiento, edad, "
+            "fecha de fallecimiento, escenario, lugar, causa, nivel del velo, índice y "
+            "demás datos entregados. No inventes contradicciones. Puedes presentar el "
+            "texto con encabezados y etiquetas simples, pero NO uses asteriscos (*) para "
+            "negritas, cursivas ni decoración, porque el texto también será convertido "
+            "directamente a voz. No uses Markdown. No escribas instrucciones ni explicaciones "
+            "sobre cómo generaste el texto. Mantén un tono de expediente oscuro e inquietante. "
+            "Evita el gore explícito. Máximo 220 palabras."
         )
+
+        cuestionario = (
+            f"Nombre: {resultado.get('nombre', '')}\n"
+            f"Sexo: {resultado.get('sexo', '')}\n"
+            f"Fecha de nacimiento: {resultado.get('nacimiento', '')}\n"
+            f"Estado civil: {resultado.get('estado', '')}\n"
+            f"Personas dependientes: {resultado.get('personas_dependientes', '')}\n"
+            f"Ocupación: {resultado.get('ocupacion', '')}\n"
+            f"Piso o nivel habitual: {resultado.get('piso', '')}\n"
+            f"Transporte principal: {resultado.get('transporte_principal', '')}\n"
+            f"Tiempo de desplazamiento: {resultado.get('tiempo_desplazamiento', '')}\n"
+            f"Horario de mayor riesgo: {resultado.get('horario_mayor_riesgo', '')}\n"
+            f"Entorno urbano: {resultado.get('entorno_urbano', '')}\n"
+            f"Actividad sísmica: {resultado.get('sismos_zona', '')}\n"
+            f"Exposición climática: {resultado.get('clima_exposicion', '')}\n"
+            f"Actividad física: {resultado.get('actividad_fisica', '')}\n"
+            f"Deportes extremos: {resultado.get('deportes_extremos', '')}\n"
+            f"Sueño: {resultado.get('sueño', '')}\n"
+            f"Fatiga: {resultado.get('fatiga', '')}\n"
+            f"Tabaco: {resultado.get('tabaco', '')}\n"
+            f"Alcohol: {resultado.get('alcohol', '')}\n"
+            f"Sustancias: {resultado.get('sustancias', '')}\n"
+            f"Vivienda: {resultado.get('vivienda', '')}\n"
+            f"Escaleras: {resultado.get('escaleras', '')}\n"
+            f"Agua: {resultado.get('agua', '')}\n"
+            f"Maquinaria: {resultado.get('maquinaria', '')}\n"
+            f"Conducir cansado: {resultado.get('conducir_cansado', '')}\n"
+            f"Objetos de riesgo: {resultado.get('objetos_riesgo', '')}\n"
+            f"Visibilidad: {resultado.get('visibilidad', '')}\n"
+            f"Atención: {resultado.get('atencion', '')}\n"
+            f"Lugar frecuente: {resultado.get('lugar_frecuente', '')}\n"
+            f"Creencias: {resultado.get('creencias', '')}\n"
+            f"Afición al terror: {resultado.get('aficion_terror', '')}\n"
+            f"Reliquias: {resultado.get('reliquias', '')}\n"
+            f"Temor principal: {resultado.get('lugar_temido', '')}\n"
+            f"Segundo temor: {resultado.get('segundo_temor', '')}"
+        )
+
+        expediente = (
+            f"Folio: {resultado.get('folio', '')}\n"
+            f"Nivel del velo: {resultado.get('nivel', '')}\n"
+            f"Índice narrativo: {resultado.get('riesgo', '')} / 100\n"
+            f"Escenario: {resultado.get('escenario', '')}\n"
+            f"Lugar: {resultado.get('lugar', '')}\n"
+            f"Fecha de fallecimiento: {resultado.get('muerte', '')}\n"
+            f"Edad al fallecer: {resultado.get('edad_muerte', '')} años\n"
+            f"Causa: {resultado.get('causa', '')}\n"
+            f"Descripción previa: {resultado.get('descripcion', '')}\n"
+            f"Detalle previo: {resultado.get('detalle', '')}"
+        )
+
         solicitud = (
             f"{instrucciones}\n\n"
-            "Amplía este expediente ficticio de terror.\n"
-            f"Escenario: {resultado['escenario']}\n"
-            f"Lugar: {resultado['lugar']}\n"
-            f"Lectura previa: {resultado['causa']}"
+            "DATOS COMPLETOS DEL CUESTIONARIO:\n"
+            f"{cuestionario}\n\n"
+            "EXPEDIENTE RESULTANTE:\n"
+            f"{expediente}"
         )
+
         respuesta = cliente.models.generate_content(
             model="gemini-3.1-flash-lite",
             contents=solicitud,
@@ -318,10 +373,12 @@ def generar_detalle_ia(resultado):
         texto = (respuesta.text or "").strip()
         if not texto:
             return None, "La IA no devolvió texto para el expediente."
+
+        # Limpieza final para impedir que cualquier Markdown con asteriscos
+        # llegue al texto mostrado, al PDF o al audio.
+        texto = texto.replace("*", "")
         return texto, None
     except Exception as exc:
-        # El detalle queda en los logs y, solo durante pruebas, también se
-        # muestra en la app mediante MODO_DIAGNOSTICO_IA.
         mensaje_error = f"{type(exc).__name__}: {exc}"
         print(f"Error de Gemini al generar detalle: {mensaje_error}")
 
@@ -787,7 +844,7 @@ with st.form("ritual_mortal_completo"):
     )
     fecha_nacimiento = st.date_input(
         "Fecha de nacimiento:",
-        min_value=datetime(1910, 1, 1),
+        min_value=datetime(1900, 1, 1),
         max_value=datetime.today(),
         value=datetime(2000, 1, 1),
         key="campo_fecha"
@@ -1654,6 +1711,36 @@ if enviar:
                 miedo=lugar_temido,
                 segundo_miedo=segundo_temor,
                 fecha_registro=datetime.now().strftime("%d/%m/%Y"),
+
+                # Cuestionario completo para la IA del anexo
+                personas_dependientes=personas_dependientes,
+                transporte_principal=transporte_principal,
+                tiempo_desplazamiento=tiempo_desplazamiento,
+                horario_mayor_riesgo=horario_mayor_riesgo,
+                entorno_urbano=entorno_urbano,
+                sismos_zona=sismos_zona,
+                clima_exposicion=clima_exposicion,
+                actividad_fisica=actividad_fisica,
+                deportes_extremos=deportes_extremos,
+                sueño=sueño,
+                fatiga=fatiga,
+                tabaco=tabaco,
+                alcohol=alcohol,
+                sustancias=sustancias,
+                vivienda=vivienda,
+                escaleras=escaleras,
+                agua=agua,
+                maquinaria=maquinaria,
+                conducir_cansado=conducir_cansado,
+                objetos_riesgo=objetos_riesgo,
+                visibilidad=visibilidad,
+                atencion=atencion,
+                lugar_frecuente=lugar_frecuente,
+                creencias=creencias,
+                aficion_terror=aficion_terror,
+                reliquias=reliquias,
+                lugar_temido=lugar_temido,
+                segundo_temor=segundo_temor,
             )
     
             st.session_state.resultado = resultado
@@ -1879,7 +1966,7 @@ if st.session_state.resultado_generado and st.session_state.resultado:
                 texto_voz_revelacion = (
                     "Anexo reservado. Última transcripción recuperada. "
                     f"{st.session_state.detalle_ia}"
-                )
+                ).replace("*", "")
                 with st.spinner("La voz de la última transcripción está descendiendo..."):
                     audio_revelacion, error_revelacion = generar_voz_ultratumba(
                         texto_voz_revelacion
