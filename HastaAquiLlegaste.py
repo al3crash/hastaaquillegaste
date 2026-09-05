@@ -281,7 +281,7 @@ def calcular_edad_en_fecha(fecha_nacimiento, fecha_muerte):
 
 
 def generar_detalle_ia(resultado):
-    """Genera una expansión ficticia con Gemini usando todo el cuestionario y el resultado."""
+    """Genera una expansión real con Gemini usando todo el cuestionario y el resultado."""
     try:
         from google import genai
     except ImportError:
@@ -811,9 +811,9 @@ with st.form("ritual_mortal_completo"):
     )
     fecha_nacimiento = st.date_input(
         "Fecha de nacimiento:",
-        min_value=datetime(1910, 1, 1),
+        min_value=datetime(1900, 1, 1),
         max_value=datetime.today(),
-        value=datetime(2000, 1, 1),
+        value=datetime(2100, 1, 1),
         key="campo_fecha"
     )
     estado_civil = st.radio(
