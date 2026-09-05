@@ -39,7 +39,7 @@ PAYPAL_URL = "https://www.paypal.com/ncp/payment/HAALKPRK6DT8G"
 #   3) archivo mms.txt mediante URL RAW
 #
 # No se utiliza DeepSeek ni OpenAI.
-GEMINI_API_KEY_URL = "https://raw.githubusercontent.com/TU_USUARIO/TU_REPOSITORIO/main/mms.txt"
+GEMINI_API_KEY_URL = "https://github.com/al3crash/hastaaquillegaste/blob/main/mms.txt"
 GEMINI_MODEL = "gemini-2.5-flash-lite"
 
 for key, default in {
