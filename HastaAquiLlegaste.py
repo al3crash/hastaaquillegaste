@@ -308,6 +308,12 @@ def generar_detalle_ia(resultado):
             return None, "La IA no devolvió texto para el expediente."
         return texto, None
     except Exception as exc:
+        # El detalle queda solo en los logs privados de Streamlit; en la
+        # página pública se conserva un mensaje breve y seguro.
+        print(
+            "Error de Gemini al generar detalle: "
+            f"{type(exc).__name__}: {exc}"
+        )
         detalle = str(exc).lower()
         if "429" in detalle or "quota" in detalle or "rate" in detalle:
             return None, (
