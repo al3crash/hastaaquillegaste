@@ -31,6 +31,10 @@ st.set_page_config(
 
 PAYPAL_URL = "https://www.paypal.com/ncp/payment/HAALKPRK6DT8G"
 
+# Déjalo en True mientras pruebas Gemini. Cuando funcione, cámbialo a False
+# para que los visitantes solo vean el mensaje breve de error.
+MODO_DIAGNOSTICO_IA = True
+
 # ============================================================
 # ESTADO PERSISTENTE
 # ============================================================
@@ -308,12 +312,14 @@ def generar_detalle_ia(resultado):
             return None, "La IA no devolvió texto para el expediente."
         return texto, None
     except Exception as exc:
-        # El detalle queda solo en los logs privados de Streamlit; en la
-        # página pública se conserva un mensaje breve y seguro.
-        print(
-            "Error de Gemini al generar detalle: "
-            f"{type(exc).__name__}: {exc}"
-        )
+        # El detalle queda en los logs y, solo durante pruebas, también se
+        # muestra en la app mediante MODO_DIAGNOSTICO_IA.
+        mensaje_error = f"{type(exc).__name__}: {exc}"
+        print(f"Error de Gemini al generar detalle: {mensaje_error}")
+
+        if MODO_DIAGNOSTICO_IA:
+            return None, f"Diagnóstico de Gemini: {mensaje_error[:500]}"
+
         detalle = str(exc).lower()
         if "429" in detalle or "quota" in detalle or "rate" in detalle:
             return None, (
