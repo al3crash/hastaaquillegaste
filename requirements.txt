@@ -3,5 +3,4 @@ reportlab
 numpy
 scipy
 edge-tts
-google-genai
 request
