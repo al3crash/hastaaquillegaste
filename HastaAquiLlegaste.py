@@ -17,7 +17,7 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 
 st.set_page_config(
-    page_title="HASTA AQUÍ LLEGASTE — Voz de Ultratumba",
+    page_title="HASTA AQUÍ LLEGASTE",
     page_icon="👁️",
     layout="centered",
     initial_sidebar_state="collapsed",
@@ -1226,44 +1226,148 @@ if enviar:
                 ]
     
             titulo_escenario, descripcion_escenario = elegir(escenarios, rng)
-    
-            lugares = []
-    
-            if "Automóvil" in transporte_principal:
-                lugares.append("una avenida de tránsito rápido")
-            if "Motocicleta" in transporte_principal:
-                lugares.append("una vía urbana con pavimento irregular")
-            if horario_mayor_riesgo in ["Noche", "Madrugada"]:
-                lugares.append("una calle con iluminación intermitente")
-            if piso >= 10:
-                lugares.append(f"un edificio situado en el nivel {piso}")
-            if vivienda == "Departamento":
-                lugares.append("un edificio residencial")
-            if vivienda == "Lugar aislado":
-                lugares.append("una propiedad alejada del tránsito habitual")
-            if lugar_frecuente == "Carretera":
-                lugares.append("un tramo de carretera de circulación rápida")
-            if lugar_frecuente == "Obra":
-                lugares.append("una zona de trabajo en construcción")
-            if lugar_frecuente == "Taller":
-                lugares.append("un taller con maquinaria en funcionamiento")
-            if lugar_frecuente == "Estación de transporte":
-                lugares.append(
-                    "una estación de transporte durante una hora de alta circulación"
-                )
-    
-            if not lugares:
-                lugares.append("un entorno cotidiano que conocías perfectamente")
-    
-            lugar_final = elegir(lugares, rng)
+
+            # Cada escenario tiene sus propios lugares. Así la narración no
+            # mezcla, por ejemplo, el mar con una avenida de alta velocidad.
+            lugares_por_escenario = {
+                "COLISIÓN EN TRAYECTO": [
+                    "una vía urbana con pavimento irregular",
+                    "un cruce congestionado que conocías de memoria",
+                ],
+                "ACCIDENTE VEHICULAR": [
+                    "una avenida de tránsito rápido",
+                    "un tramo de carretera de circulación rápida",
+                ],
+                "EL TRAYECTO SIN TESTIGOS": [
+                    "una calle con iluminación intermitente",
+                    "un desvío silencioso fuera de tu ruta habitual",
+                ],
+                "FALLA OPERATIVA": [
+                    "un taller con maquinaria en funcionamiento",
+                    "una zona de trabajo en construcción",
+                ],
+                "CAÍDA EN ESTRUCTURA": [
+                    "una escalera de servicio entre dos niveles",
+                    f"un edificio situado en el nivel {max(2, piso)}",
+                ],
+                "EL AGUA": [
+                    "la orilla de un cuerpo de agua sin vigilancia",
+                    "un muelle donde la corriente no parecía peligrosa",
+                ],
+                "EL MOVIMIENTO": [
+                    "un edificio residencial durante un sismo",
+                    "un corredor interior donde las salidas quedaron ocultas",
+                ],
+                "TORMENTA ELÉCTRICA": [
+                    "una calle anegada bajo una tormenta eléctrica",
+                    "un trayecto exterior sin un refugio cercano",
+                ],
+                "EL LÍMITE": [
+                    "un sitio apartado donde el ruido no llegaba a nadie",
+                    "un punto elevado lejos de las rutas habituales",
+                ],
+                "MICROSUEÑO": [
+                    "una avenida casi vacía de madrugada",
+                    "un tramo recto de carretera que parecía interminable",
+                ],
+                "REGRESO SIN TESTIGOS": [
+                    "un tramo aislado de una calle sin iluminación",
+                    "una ruta nocturna con tránsito irregular",
+                ],
+                "EL SEGUNDO PERDIDO": [
+                    "un trayecto que habías hecho demasiadas veces",
+                    "un cruce habitual que esa noche parecía distinto",
+                ],
+                "ALTURA": [
+                    f"un edificio situado en el nivel {max(10, piso)}",
+                    "una azotea donde el viento borraba los sonidos de abajo",
+                ],
+                "LA PROFUNDIDAD": [
+                    "la orilla de un cuerpo de agua sin vigilancia",
+                    "una zona profunda donde la superficie parecía inmóvil",
+                ],
+                "TIERRA EN LLAMAS": [
+                    "una ruta cubierta por ceniza cerca de actividad volcánica",
+                    "un poblado con la visibilidad devorada por la ceniza",
+                ],
+                "EL SUELO CEDE": [
+                    "un edificio residencial durante un sismo",
+                    "una calle donde los cables y escombros cerraban el paso",
+                ],
+                "LA CARRETERA": [
+                    "un tramo de carretera de circulación rápida",
+                    "una carretera vacía sin señal telefónica",
+                ],
+                "EL BORDE": [
+                    "una azotea donde el viento borraba los sonidos de abajo",
+                    "una escalera de servicio entre dos niveles",
+                ],
+                "EL HUMO": [
+                    "un pasillo interior donde el humo ocultaba la salida",
+                    "un edificio residencial que olía a cable quemado",
+                ],
+                "LA TORMENTA": [
+                    "un trayecto exterior bajo una tormenta eléctrica",
+                    "una calle anegada con visibilidad casi nula",
+                ],
+                "EL EDIFICIO VACÍO": [
+                    "un edificio abandonado con pasillos sin señalización",
+                    "una estructura deshabitada donde la salida ya no era visible",
+                ],
+                "SIN SALIDA": [
+                    "un ascensor detenido entre niveles",
+                    "un espacio cerrado donde la luz dejó de responder",
+                ],
+                "EL BOSQUE": [
+                    "un sendero de bosque sin iluminación",
+                    "una zona arbolada donde el camino desaparecía entre la niebla",
+                ],
+                "A CIEGAS": [
+                    "un pasillo sin luz ni referencias",
+                    "un trayecto donde la oscuridad ocultaba cada obstáculo",
+                ],
+                "SIN TESTIGOS": [
+                    "un sitio apartado fuera de las rutas habituales",
+                    "un lugar donde el ruido no alcanzaba a nadie",
+                ],
+                "LA MULTITUD": [
+                    "una estación de transporte durante una hora de alta circulación",
+                    "un corredor saturado donde todas las salidas parecían cerradas",
+                ],
+                "EL VUELO": [
+                    "un vuelo nocturno sobre una ruta sin referencias visibles",
+                    "un aeropuerto lejano mientras la tormenta cerraba la pista",
+                ],
+                "EL IMPACTO": [
+                    "un cruce de avenida con visibilidad reducida",
+                    "una intersección donde dos rutas se encontraron demasiado tarde",
+                ],
+                "EL ENCUENTRO": [
+                    "un sendero aislado lejos de zonas habitadas",
+                    "un terreno donde no había una salida clara",
+                ],
+                "SIN SEÑAL": [
+                    "una carretera vacía sin cobertura telefónica",
+                    "un lugar apartado donde el teléfono no conseguía conectar",
+                ],
+            }
+
+            lugares_genericos = [
+                "un entorno cotidiano que conocías perfectamente",
+                "un sitio familiar que esa noche parecía tener otra forma",
+            ]
+            lugar_final = elegir(
+                lugares_por_escenario.get(titulo_escenario, lugares_genericos),
+                rng
+            )
     
             detalle_psicologico = elegir([
-                "Lo inquietante es que durante los días anteriores habías notado pequeños detalles fuera de lugar.",
-                "Existe un instante previo en el que todo parece demasiado silencioso.",
-                "El último recuerdo claro corresponde a un detalle completamente insignificante.",
-                "Quienes reconstruyen la escena descubren que una decisión aparentemente pequeña cambió toda la secuencia.",
-                "La parte más perturbadora es que el lugar era completamente familiar.",
-                "Horas antes, el expediente registra una rutina exactamente igual a muchas otras. Nadie esperaba que esa fuera la última.",
+                "Durante los días anteriores, algo había cambiado de lugar cada vez que dejabas de mirarlo.",
+                "El silencio no era ausencia de sonido: parecía contener una respiración demasiado cerca.",
+                "El último recuerdo claro es insignificante: una luz encendida, una puerta entreabierta, alguien pronunciando tu nombre sin estar ahí.",
+                "Quienes reconstruyen la escena encuentran señales de una decisión pequeña, aunque nadie puede explicar quién la tomó.",
+                "Lo más perturbador es que conocías ese lugar; aun así, en el expediente sus medidas ya no coinciden.",
+                "Horas antes repetiste la misma rutina de siempre. Después, las cámaras registran un minuto que nadie logra reproducir completo.",
             ], rng)
     
             detalles_miedo = {
