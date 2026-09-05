@@ -271,43 +271,50 @@ def calcular_edad_en_fecha(fecha_nacimiento, fecha_muerte):
 
 
 def generar_detalle_ia(resultado):
-    """Genera una expansión ficticia sin enviar datos identificables."""
+    """Genera una expansión ficticia con Gemini sin datos identificables."""
     try:
-        from openai import OpenAI
+        from google import genai
     except ImportError:
-        return None, "Falta instalar la dependencia 'openai' en requirements.txt."
+        return None, "Falta instalar la dependencia 'google-genai' en requirements.txt."
 
     try:
-        api_key = st.secrets["OPENAI_API_KEY"]
+        api_key = st.secrets["GEMINI_API_KEY"]
     except (KeyError, FileNotFoundError):
-        return None, "No se encontró el secreto OPENAI_API_KEY en Streamlit."
+        return None, "No se encontró el secreto GEMINI_API_KEY en Streamlit."
 
     try:
-        cliente = OpenAI(api_key=api_key)
-        respuesta = cliente.responses.create(
-            model="gpt-5",
-            store=False,
-            instructions=(
+        cliente = genai.Client(api_key=api_key)
+        instrucciones = (
                 "Escribe en español una escena breve de horror psicológico. "
                 "Es una obra de ficción: jamás la presentes como predicción, "
                 "hecho real, diagnóstico o consejo. No uses nombres, fechas de "
                 "nacimiento, edades ni datos identificables. Mantén coherencia "
                 "total entre escenario y lugar. Usa detalles sensoriales, "
                 "presencias ambiguas y un cierre inquietante. Máximo 220 palabras."
-            ),
-            input=(
-                "Amplía este expediente ficticio de terror.\n"
-                f"Escenario: {resultado['escenario']}\n"
-                f"Lugar: {resultado['lugar']}\n"
-                f"Lectura previa: {resultado['causa']}"
-            ),
         )
-        texto = (respuesta.output_text or "").strip()
+        solicitud = (
+            f"{instrucciones}\n\n"
+            "Amplía este expediente ficticio de terror.\n"
+            f"Escenario: {resultado['escenario']}\n"
+            f"Lugar: {resultado['lugar']}\n"
+            f"Lectura previa: {resultado['causa']}"
+        )
+        respuesta = cliente.models.generate_content(
+            model="gemini-3.1-flash-lite",
+            contents=solicitud,
+        )
+        texto = (respuesta.text or "").strip()
         if not texto:
             return None, "La IA no devolvió texto para el expediente."
         return texto, None
     except Exception as exc:
-        return None, f"No se pudo abrir el expediente adicional: {exc}"
+        detalle = str(exc).lower()
+        if "429" in detalle or "quota" in detalle or "rate" in detalle:
+            return None, (
+                "El oráculo está recibiendo demasiadas voces. "
+                "Espera un momento e inténtalo de nuevo."
+            )
+        return None, "No se pudo abrir el expediente adicional. Inténtalo más tarde."
 
 
 def dibujar_codigo_barras(canvas, x, y, semilla):
