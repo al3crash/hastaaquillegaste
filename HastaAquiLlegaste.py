@@ -443,7 +443,7 @@ def instalar_ambiente():
 
         function iniciar() {{
             audio.loop = true;
-            audio.volume = 0.42;
+            audio.volume = 2.0;
             const p = audio.play();
             if (p && p.catch) p.catch(() => {{}});
         }}
