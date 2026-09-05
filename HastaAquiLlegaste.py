@@ -813,7 +813,7 @@ with st.form("ritual_mortal_completo"):
         "Fecha de nacimiento:",
         min_value=datetime(1900, 1, 1),
         max_value=datetime.today(),
-        value=datetime(2100, 1, 1),
+        value=datetime(2000, 1, 1),
         key="campo_fecha"
     )
     estado_civil = st.radio(
