@@ -31,9 +31,9 @@ st.set_page_config(
 
 PAYPAL_URL = "https://www.paypal.com/ncp/payment/HAALKPRK6DT8G"
 
-# Déjalo en True mientras pruebas Gemini. Cuando funcione, cámbialo a False
-# para que los visitantes solo vean el mensaje breve de error.
-MODO_DIAGNOSTICO_IA = True
+# Actívalo solo si necesitas diagnosticar Gemini. En producción, los
+# visitantes verán un mensaje breve en lugar del detalle técnico.
+MODO_DIAGNOSTICO_IA = False
 
 # ============================================================
 # ESTADO PERSISTENTE
@@ -48,6 +48,9 @@ for key, default in {
     "folio": None,
     "detalle_ia": None,
     "detalle_ia_error": None,
+    "audio_revelacion": None,
+    "audio_revelacion_error": None,
+    "pdf_revelacion": None,
 }.items():
     if key not in st.session_state:
         st.session_state[key] = default
@@ -79,6 +82,9 @@ def limpiar_todo():
     st.session_state.folio = None
     st.session_state.detalle_ia = None
     st.session_state.detalle_ia_error = None
+    st.session_state.audio_revelacion = None
+    st.session_state.audio_revelacion_error = None
+    st.session_state.pdf_revelacion = None
 
 
 # ============================================================
@@ -293,8 +299,10 @@ def generar_detalle_ia(resultado):
                 "Es una obra de ficción: jamás la presentes como predicción, "
                 "hecho real, diagnóstico o consejo. No uses nombres, fechas de "
                 "nacimiento, edades ni datos identificables. Mantén coherencia "
-                "total entre escenario y lugar. Usa detalles sensoriales, "
-                "presencias ambiguas y un cierre inquietante. Máximo 220 palabras."
+                "total entre escenario y lugar. Usa un tono de expediente prohibido: "
+                "silencios que parecen responder, registros incompletos, presencias "
+                "ambiguas y un cierre inquietante. Evita el gore explícito. "
+                "Máximo 220 palabras."
         )
         solicitud = (
             f"{instrucciones}\n\n"
@@ -340,6 +348,146 @@ def dibujar_codigo_barras(canvas, x, y, semilla):
         canvas.rect(x + ancho_total, y, ancho, 40, fill=1, stroke=0)
         ancho_total += ancho + espacio
     canvas.restoreState()
+
+
+def generar_acta_revelacion_pdf(resultado, revelacion):
+    """Crea un anexo descargable independiente del acta principal."""
+    buffer = io.BytesIO()
+
+    def marco_anexo(canvas, doc):
+        canvas.saveState()
+        canvas.setFillColor(colors.HexColor("#07030b"))
+        canvas.rect(0, 0, letter[0], letter[1], fill=1, stroke=0)
+        canvas.setStrokeColor(colors.HexColor("#9d4edd"))
+        canvas.setLineWidth(2)
+        canvas.rect(22, 22, 568, 748)
+        canvas.setStrokeColor(colors.HexColor("#00ff66"))
+        canvas.setLineWidth(.5)
+        canvas.rect(27, 27, 558, 738)
+        canvas.setFillColor(colors.HexColor("#5b0f1f"))
+        canvas.rect(39, 735, 514, 3, fill=1, stroke=0)
+        canvas.setFont("Helvetica", 6)
+        canvas.setFillColor(colors.HexColor("#777785"))
+        canvas.drawCentredString(
+            306, 42, "ANEXO NARRATIVO FICTICIO · ARCHIVO NO VERIFICABLE"
+        )
+        canvas.restoreState()
+
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=letter,
+        leftMargin=52,
+        rightMargin=52,
+        topMargin=58,
+        bottomMargin=68,
+    )
+
+    titulo = ParagraphStyle(
+        "titulo_anexo",
+        fontName="Helvetica-Bold",
+        fontSize=18,
+        leading=22,
+        alignment=1,
+        textColor=colors.HexColor("#00ff66"),
+        spaceAfter=5,
+    )
+    subtitulo = ParagraphStyle(
+        "subtitulo_anexo",
+        fontName="Helvetica-Bold",
+        fontSize=9,
+        leading=12,
+        alignment=1,
+        textColor=colors.HexColor("#c9a7ff"),
+        spaceAfter=20,
+    )
+    etiqueta = ParagraphStyle(
+        "etiqueta_anexo",
+        fontName="Helvetica-Bold",
+        fontSize=8,
+        leading=10,
+        textColor=colors.HexColor("#00ff66"),
+    )
+    valor = ParagraphStyle(
+        "valor_anexo",
+        fontName="Helvetica",
+        fontSize=8.5,
+        leading=11,
+        textColor=colors.HexColor("#e6e0eb"),
+    )
+    seccion = ParagraphStyle(
+        "seccion_anexo",
+        fontName="Helvetica-Bold",
+        fontSize=9,
+        leading=12,
+        textColor=colors.HexColor("#ffffff"),
+        backColor=colors.HexColor("#32104f"),
+        borderPadding=5,
+        spaceBefore=14,
+        spaceAfter=8,
+    )
+    transcripcion = ParagraphStyle(
+        "transcripcion_anexo",
+        fontName="Helvetica-Oblique",
+        fontSize=10,
+        leading=17,
+        textColor=colors.HexColor("#e8deed"),
+        borderColor=colors.HexColor("#6f2b8b"),
+        borderWidth=.6,
+        borderPadding=12,
+        backColor=colors.HexColor("#130b1c"),
+    )
+    nota = ParagraphStyle(
+        "nota_anexo",
+        fontName="Helvetica",
+        fontSize=7.5,
+        leading=10,
+        alignment=1,
+        textColor=colors.HexColor("#9a91a3"),
+        spaceBefore=18,
+    )
+
+    folio_anexo = f"{resultado['folio']}-R"
+    datos = [
+        [
+            Paragraph("FOLIO ORIGINAL", etiqueta),
+            Paragraph(html.escape(resultado["folio"]), valor),
+            Paragraph("ANEXO", etiqueta),
+            Paragraph(folio_anexo, valor),
+        ],
+        [
+            Paragraph("ESCENARIO", etiqueta),
+            Paragraph(html.escape(resultado["escenario"]), valor),
+            Paragraph("ENTORNO", etiqueta),
+            Paragraph(html.escape(resultado["lugar"]), valor),
+        ],
+    ]
+
+    historia = [
+        Paragraph("ANEXO RESERVADO", titulo),
+        Paragraph("ÚLTIMA TRANSCRIPCIÓN DEL EXPEDIENTE", subtitulo),
+        Table(
+            datos,
+            colWidths=[82, 170, 72, 142],
+            style=[
+                ("GRID", (0, 0), (-1, -1), .35, colors.HexColor("#55346b")),
+                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#100916")),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                ("TOPPADDING", (0, 0), (-1, -1), 7),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+            ],
+        ),
+        Paragraph("TRANSCRIPCIÓN RECUPERADA", seccion),
+        Paragraph(html.escape(revelacion).replace("\n", "<br/>"), transcripcion),
+        Paragraph(
+            "Este anexo es una pieza de ficción generada para la experiencia. "
+            "No describe hechos, riesgos ni acontecimientos reales.",
+            nota,
+        ),
+    ]
+    doc.build(historia, onFirstPage=marco_anexo, onLaterPages=marco_anexo)
+    return buffer.getvalue()
 
 
 # ============================================================
@@ -567,6 +715,9 @@ if not st.session_state.ritual_iniciado:
         st.session_state.pdf_generado = None
         st.session_state.detalle_ia = None
         st.session_state.detalle_ia_error = None
+        st.session_state.audio_revelacion = None
+        st.session_state.audio_revelacion_error = None
+        st.session_state.pdf_revelacion = None
 
         st.components.v1.html("""
         <script>
@@ -1511,6 +1662,9 @@ if enviar:
             st.session_state.pdf_generado = None
             st.session_state.detalle_ia = None
             st.session_state.detalle_ia_error = None
+            st.session_state.audio_revelacion = None
+            st.session_state.audio_revelacion_error = None
+            st.session_state.pdf_revelacion = None
     
             # ====================================================
             # GENERACIÓN DE AUDIO
@@ -1692,6 +1846,10 @@ if st.session_state.resultado_generado and st.session_state.resultado:
                 detalle_ia, error_ia = generar_detalle_ia(r)
                 st.session_state.detalle_ia = detalle_ia
                 st.session_state.detalle_ia_error = error_ia
+                if detalle_ia:
+                    st.session_state.audio_revelacion = None
+                    st.session_state.audio_revelacion_error = None
+                    st.session_state.pdf_revelacion = None
 
     if st.session_state.detalle_ia:
         texto_detalle = html.escape(st.session_state.detalle_ia).replace("\n", "<br>")
@@ -1699,6 +1857,84 @@ if st.session_state.resultado_generado and st.session_state.resultado:
             f'<div class="resultado-profundo">{texto_detalle}</div>',
             unsafe_allow_html=True
         )
+
+        st.markdown("### 🕯️ Anexo de la última revelación")
+        st.markdown(
+            "<div class='oraculo-box'>"
+            "<div class='oraculo-status'>ARCHIVO RECUPERADO · ACCESO RESTRINGIDO</div>"
+            "<div class='nota-voz'>Puedes conservar la sentencia original y, "
+            "por separado, generar los archivos del anexo.</div>"
+            "</div>",
+            unsafe_allow_html=True
+        )
+
+        columna_audio, columna_acta = st.columns(2)
+
+        if st.session_state.audio_revelacion is None:
+            if columna_audio.button(
+                "🎙️ GENERAR VOZ DEL ANEXO",
+                use_container_width=True,
+                key="generar_audio_revelacion"
+            ):
+                texto_voz_revelacion = (
+                    "Anexo reservado. Última transcripción recuperada. "
+                    f"{st.session_state.detalle_ia}"
+                )
+                with st.spinner("La voz de la última transcripción está descendiendo..."):
+                    audio_revelacion, error_revelacion = generar_voz_ultratumba(
+                        texto_voz_revelacion
+                    )
+                    st.session_state.audio_revelacion = audio_revelacion
+                    st.session_state.audio_revelacion_error = error_revelacion
+
+        if st.session_state.pdf_revelacion is None:
+            if columna_acta.button(
+                "📁 GENERAR ACTA DEL ANEXO",
+                use_container_width=True,
+                key="generar_pdf_revelacion"
+            ):
+                with st.spinner("El anexo está siendo sellado en tinta oscura..."):
+                    st.session_state.pdf_revelacion = generar_acta_revelacion_pdf(
+                        r,
+                        st.session_state.detalle_ia
+                    )
+
+        if st.session_state.audio_revelacion:
+            st.markdown("#### 🎙️ Voz de la última revelación")
+            st.audio(st.session_state.audio_revelacion, format="audio/wav")
+            st.download_button(
+                "☠️ DESCARGAR VOZ DEL ANEXO",
+                data=st.session_state.audio_revelacion,
+                file_name=(
+                    f"Anexo_Ultratumba_{r['folio']}_"
+                    f"{r['nombre'].replace(' ', '_')}.wav"
+                ),
+                mime="audio/wav",
+                use_container_width=True,
+                on_click="ignore",
+                key="descargar_audio_revelacion"
+            )
+        elif st.session_state.audio_revelacion_error:
+            st.markdown(
+                "<div class='error-voz'>"
+                f"{html.escape(st.session_state.audio_revelacion_error)}"
+                "</div>",
+                unsafe_allow_html=True
+            )
+
+        if st.session_state.pdf_revelacion:
+            st.download_button(
+                "⚖️ DESCARGAR ACTA DEL ANEXO",
+                data=st.session_state.pdf_revelacion,
+                file_name=(
+                    f"Anexo_Reservado_{r['folio']}_"
+                    f"{r['nombre'].replace(' ', '_')}.pdf"
+                ),
+                mime="application/pdf",
+                use_container_width=True,
+                on_click="ignore",
+                key="descargar_pdf_revelacion"
+            )
     elif st.session_state.detalle_ia_error:
         st.markdown(
             f'<div class="error-voz">{html.escape(st.session_state.detalle_ia_error)}</div>',
